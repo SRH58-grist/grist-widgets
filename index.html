@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V8-safe-fix</title>
+<title>Organigramme Grist V9</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -88,6 +88,30 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 <div id="viewport"><div id="org"></div></div>
 
 <script>
+  // Initialisation Grist en PREMIER : les champs de mapping doivent apparaître même si le reste plante.
+  grist.ready({
+    requiredAccess:"read table",
+    columns:[
+      {name:"Intitule",title:"Intitulé du poste",optional:false},
+      {name:"Parent",title:"Supérieur hiérarchique",type:"Ref",optional:false},
+      {name:"Niveau",title:"Niveau organigramme",optional:false},
+      {name:"Direction",title:"Direction",optional:true},
+      {name:"Service",title:"Service (libellé)",optional:true},
+      {name:"Occupant",title:"Occupant / nom complet",optional:true},
+      {name:"Categorie",title:"Catégorie",optional:true},
+      {name:"Statut",title:"Statut du poste",optional:true},
+      {name:"Quotite",title:"Quotité",optional:true},
+      {name:"IDPoste",title:"ID du poste",optional:true},
+      {name:"Encadrement",title:"Poste d'encadrement ?",type:"Bool",optional:true},
+      {name:"Afficher",title:"Afficher dans l'organigramme ?",type:"Bool",optional:true}
+    ]
+  });
+
+  window.addEventListener("error", (e)=>{
+    const el=document.getElementById("status");
+    if(el) el.textContent="Erreur JavaScript : "+(e.message || "inconnue");
+  });
+
 (() => {
   const $ = id => document.getElementById(id);
   const NODE_W = 175;
@@ -406,23 +430,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   ["direction","service","detail"].forEach(id=>$(id).addEventListener("change",changed));
   $("print").addEventListener("click",()=>window.print());
 
-  grist.ready({
-    requiredAccess:"read table",
-    columns:[
-      {name:"Intitule",title:"Intitulé du poste",optional:false},
-      {name:"Parent",title:"Supérieur hiérarchique",type:"Ref",optional:false},
-      {name:"Niveau",title:"Niveau organigramme",optional:false},
-      {name:"Direction",title:"Direction",optional:true},
-      {name:"Service",title:"Service (libellé)",optional:true},
-      {name:"Occupant",title:"Occupant / nom complet",optional:true},
-      {name:"Categorie",title:"Catégorie",optional:true},
-      {name:"Statut",title:"Statut du poste",optional:true},
-      {name:"Quotite",title:"Quotité",optional:true},
-      {name:"IDPoste",title:"ID du poste",optional:true},
-      {name:"Encadrement",title:"Poste d'encadrement ?",type:"Bool",optional:true},
-      {name:"Afficher",title:"Afficher dans l'organigramme ?",type:"Bool",optional:true}
-    ]
-  });
 
   grist.onRecords((data, mappings)=>{
     try{
