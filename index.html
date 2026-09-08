@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V3</title>
+<title>Organigramme Grist V6</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -28,22 +28,22 @@ button{cursor:pointer}
 #viewport{overflow:auto;min-height:calc(100vh - 88px);padding:24px}
 #org{position:relative;margin:0 auto}
 .node{
-  position:absolute;z-index:3;width:220px;min-height:78px;padding:10px 12px;
-  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  position:absolute;z-index:3;width:180px;min-height:60px;padding:7px 9px;
+  background:var(--card);border:1px solid var(--border);border-radius:8px;
   box-shadow:0 1px 3px rgba(0,0,0,.07);text-align:left
 }
 .node.encadrement{border-top:4px solid var(--accent)}
-.title{font-size:13px;font-weight:700;line-height:1.25}
-.person{font-size:13px;margin-top:6px;font-weight:700}
-.meta{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.35}
+.title{font-size:11.5px;font-weight:700;line-height:1.2}
+.person{font-size:11px;margin-top:4px;font-weight:700}
+.meta{margin-top:3px;font-size:10px;color:var(--muted);line-height:1.35}
 .badge{
-  display:inline-block;margin-top:6px;padding:2px 6px;border-radius:99px;
+  display:inline-block;margin-top:4px;padding:1px 5px;border-radius:99px;
   font-size:10px;background:#eef0f7;color:var(--accent);font-weight:700
 }
 svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-events:none}
 .empty{
   max-width:680px;margin:80px auto;padding:20px;background:#fff;
-  border:1px solid var(--border);border-radius:10px;text-align:center;color:var(--muted)
+  border:1px solid var(--border);border-radius:8px;text-align:center;color:var(--muted)
 }
 .warn{color:#885d2e}
 @media print{
@@ -89,11 +89,11 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const NODE_W = 220;
-  const NODE_H = 84;
-  const X_GAP = 42;
-  const Y_GAP = 90;
-  const PAD = 30;
+  const NODE_W = 180;
+  const NODE_H = 66;
+  const X_GAP = 22;
+  const Y_GAP = 52;
+  const PAD = 18;
 
   let rows = [];
 
@@ -196,18 +196,34 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
   function buildGraph(data){
     const nodes=new Map();
-    data.forEach(r=>nodes.set(Number(r._rowId),{
-      ...r,
-      id:Number(r._rowId),
-      parentId:refId(r.Parent),
-      level:nval(r.Niveau),
-      order:nval(r.Ordre),
-      children:[]
-    }));
+    const byTitle=new Map();
+
+    data.forEach(r=>{
+      const id=Number(r._rowId);
+      const node={
+        ...r,
+        id,
+        parentId:null,
+        level:nval(r.Niveau),
+        children:[]
+      };
+      nodes.set(id,node);
+      const title=val(r.Intitule).trim();
+      if(title && !byTitle.has(title)) byTitle.set(title,id);
+    });
+
+    for(const n of nodes.values()){
+      let pid=refId(n.Parent);
+      if(!(pid && nodes.has(pid))){
+        const label=val(n.Parent).trim();
+        pid=byTitle.get(label) || null;
+      }
+      n.parentId=(pid && pid!==n.id) ? pid : null;
+    }
 
     const roots=[];
     for(const n of nodes.values()){
-      if(n.parentId && nodes.has(n.parentId) && n.parentId!==n.id){
+      if(n.parentId && nodes.has(n.parentId)){
         nodes.get(n.parentId).children.push(n);
       }else{
         roots.push(n);
@@ -215,8 +231,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     }
 
     const sorter=(a,b)=>{
-      const oa=a.order ?? 999999, ob=b.order ?? 999999;
-      if(oa!==ob) return oa-ob;
       return val(a.Intitule).localeCompare(val(b.Intitule),"fr");
     };
 
@@ -312,7 +326,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
       levelBuckets.get(n.level).push(n);
     }
     for(const arr of levelBuckets.values()){
-      arr.sort((a,b)=>(a.logicalX-b.logicalX)||((a.order??999999)-(b.order??999999)));
+      arr.sort((a,b)=>(a.logicalX-b.logicalX)||val(a.Intitule).localeCompare(val(b.Intitule),"fr"));
       for(let i=1;i<arr.length;i++){
         if(arr[i].logicalX <= arr[i-1].logicalX){
           arr[i].logicalX = arr[i-1].logicalX + 1;
@@ -349,8 +363,9 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
     drawLines(nodes,width,height);
 
+    const linkCount=[...nodes.values()].filter(n=>n.parentId && nodes.has(n.parentId)).length;
     $("status").textContent=
-      `${data.length} poste${data.length>1?"s":""} • niveaux détectés : ${levels.join(", ")}`;
+      `${data.length} poste${data.length>1?"s":""} • niveaux détectés : ${levels.join(", ")} • ${linkCount} lien${linkCount>1?"s":""}`;
   }
 
   function drawLines(nodes,width,height){
@@ -371,8 +386,10 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
       const path=document.createElementNS("http://www.w3.org/2000/svg","path");
       path.setAttribute("d",`M ${x1} ${y1} V ${mid} H ${x2} V ${y2}`);
       path.setAttribute("fill","none");
-      path.setAttribute("stroke","#b8bec9");
-      path.setAttribute("stroke-width","1.4");
+      path.setAttribute("stroke","#858b96");
+      path.setAttribute("stroke-width","1.8");
+      path.setAttribute("stroke-linecap","round");
+      path.setAttribute("stroke-linejoin","round");
       svg.appendChild(path);
     }
   }
@@ -398,7 +415,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
       {name:"Intitule",title:"Intitulé du poste",optional:false},
       {name:"Parent",title:"Supérieur hiérarchique",type:"Ref",optional:false},
       {name:"Niveau",title:"Niveau organigramme",optional:false},
-      {name:"Ordre",title:"Ordre organigramme",optional:true},
       {name:"Direction",title:"Direction",optional:true},
       {name:"Service",title:"Service (libellé)",optional:true},
       {name:"Occupant",title:"Occupant / nom complet",optional:true},
