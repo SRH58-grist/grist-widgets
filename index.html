@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V4</title>
+<title>Organigramme Grist V3</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -200,7 +200,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
       ...r,
       id:Number(r._rowId),
       parentId:refId(r.Parent),
-      declaredLevel:nval(r.Niveau),
       level:nval(r.Niveau),
       order:nval(r.Ordre),
       children:[]
@@ -223,29 +222,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
     for(const n of nodes.values()) n.children.sort(sorter);
     roots.sort(sorter);
-
-    // Niveau effectif :
-    // - on conserve le niveau saisi comme minimum souhaité ;
-    // - mais un enfant est toujours au moins un niveau sous son parent.
-    const visiting=new Set(), done=new Set();
-    function computeLevel(n){
-      if(done.has(n.id)) return n.level;
-      if(visiting.has(n.id)){
-        // cycle de références : on garde le niveau déclaré pour éviter une boucle infinie.
-        return n.declaredLevel ?? 1;
-      }
-      visiting.add(n.id);
-      let effective=n.declaredLevel ?? 1;
-      if(n.parentId && nodes.has(n.parentId) && n.parentId!==n.id){
-        const p=nodes.get(n.parentId);
-        effective=Math.max(effective, computeLevel(p)+1);
-      }
-      n.level=effective;
-      visiting.delete(n.id);
-      done.add(n.id);
-      return effective;
-    }
-    for(const n of nodes.values()) computeLevel(n);
 
     return {nodes,roots};
   }
@@ -374,7 +350,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     drawLines(nodes,width,height);
 
     $("status").textContent=
-      `${data.length} poste${data.length>1?"s":""} • niveaux effectifs : ${levels.join(", ")}`;
+      `${data.length} poste${data.length>1?"s":""} • niveaux détectés : ${levels.join(", ")}`;
   }
 
   function drawLines(nodes,width,height){
