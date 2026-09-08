@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V5</title>
+<title>Organigramme Grist V4</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -141,21 +141,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     })[c]);
   }
 
-  function resolveParentId(rawParent, byId, byTitle, byPostId){
-    const rid = refId(rawParent);
-    if(rid && byId.has(rid)) return rid;
-
-    // Si Grist transmet la valeur affichée de la référence plutôt que l'ID,
-    // on tente une résolution par ID_Poste puis par libellé de poste.
-    const s = val(rawParent).trim();
-    if(!s) return null;
-
-    if(byPostId.has(s)) return byPostId.get(s);
-    if(byTitle.has(s)) return byTitle.get(s);
-
-    return null;
-  }
-
   function unique(values){
     return [...new Set(values.filter(v => v !== "" && v != null))]
       .sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}));
@@ -186,17 +171,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   function visibleRows(){
     const d=$("direction").value;
     const s=$("service").value;
-
     const byId=new Map(rows.map(r=>[Number(r._rowId),r]));
-    const byTitle=new Map();
-    const byPostId=new Map();
-
-    for(const r of rows){
-      const t=val(r.Intitule).trim();
-      const p=val(r.IDPoste).trim();
-      if(t && !byTitle.has(t)) byTitle.set(t, Number(r._rowId));
-      if(p && !byPostId.has(p)) byPostId.set(p, Number(r._rowId));
-    }
 
     const base=rows.filter(r=>{
       if(r.Afficher !== undefined && r.Afficher !== null && !bool(r.Afficher,true)) return false;
@@ -205,15 +180,15 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
       return true;
     });
 
+    // Ajouter les ancêtres indispensables pour ne pas casser la branche.
     const keep=new Map(base.map(r=>[Number(r._rowId),r]));
-
     for(const r of base){
-      let pid=resolveParentId(r.Parent, byId, byTitle, byPostId), guard=0;
+      let pid=refId(r.Parent), guard=0;
       while(pid && byId.has(pid) && guard++<100){
         const p=byId.get(pid);
         if(d && val(p.Direction)!==d) break;
         keep.set(pid,p);
-        pid=resolveParentId(p.Parent, byId, byTitle, byPostId);
+        pid=refId(p.Parent);
       }
     }
     return [...keep.values()];
@@ -221,31 +196,15 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
   function buildGraph(data){
     const nodes=new Map();
-    const byTitle=new Map();
-    const byPostId=new Map();
-
-    data.forEach(r=>{
-      const id=Number(r._rowId);
-      const node={
-        ...r,
-        id,
-        parentId:null,
-        declaredLevel:nval(r.Niveau),
-        level:nval(r.Niveau),
-        order:nval(r.Ordre),
-        children:[]
-      };
-      nodes.set(id,node);
-
-      const t=val(r.Intitule).trim();
-      const p=val(r.IDPoste).trim();
-      if(t && !byTitle.has(t)) byTitle.set(t,id);
-      if(p && !byPostId.has(p)) byPostId.set(p,id);
-    });
-
-    for(const n of nodes.values()){
-      n.parentId=resolveParentId(n.Parent,nodes,byTitle,byPostId);
-    }
+    data.forEach(r=>nodes.set(Number(r._rowId),{
+      ...r,
+      id:Number(r._rowId),
+      parentId:refId(r.Parent),
+      declaredLevel:nval(r.Niveau),
+      level:nval(r.Niveau),
+      order:nval(r.Ordre),
+      children:[]
+    }));
 
     const roots=[];
     for(const n of nodes.values()){
@@ -265,18 +224,22 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     for(const n of nodes.values()) n.children.sort(sorter);
     roots.sort(sorter);
 
+    // Niveau effectif :
+    // - on conserve le niveau saisi comme minimum souhaité ;
+    // - mais un enfant est toujours au moins un niveau sous son parent.
     const visiting=new Set(), done=new Set();
     function computeLevel(n){
       if(done.has(n.id)) return n.level;
-      if(visiting.has(n.id)) return n.declaredLevel ?? 1;
+      if(visiting.has(n.id)){
+        // cycle de références : on garde le niveau déclaré pour éviter une boucle infinie.
+        return n.declaredLevel ?? 1;
+      }
       visiting.add(n.id);
-
       let effective=n.declaredLevel ?? 1;
       if(n.parentId && nodes.has(n.parentId) && n.parentId!==n.id){
         const p=nodes.get(n.parentId);
         effective=Math.max(effective, computeLevel(p)+1);
       }
-
       n.level=effective;
       visiting.delete(n.id);
       done.add(n.id);
@@ -410,9 +373,8 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
     drawLines(nodes,width,height);
 
-    const linkCount=[...nodes.values()].filter(n=>n.parentId && nodes.has(n.parentId) && n.parentId!==n.id).length;
     $("status").textContent=
-      `${data.length} poste${data.length>1?"s":""} • niveaux effectifs : ${levels.join(", ")} • ${linkCount} lien${linkCount>1?"s":""} détecté${linkCount>1?"s":""}`;
+      `${data.length} poste${data.length>1?"s":""} • niveaux effectifs : ${levels.join(", ")}`;
   }
 
   function drawLines(nodes,width,height){
@@ -433,18 +395,9 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
       const path=document.createElementNS("http://www.w3.org/2000/svg","path");
       path.setAttribute("d",`M ${x1} ${y1} V ${mid} H ${x2} V ${y2}`);
       path.setAttribute("fill","none");
-      path.setAttribute("stroke","#9299a6");
-      path.setAttribute("stroke-width","2");
-      path.setAttribute("stroke-linecap","round");
-      path.setAttribute("stroke-linejoin","round");
+      path.setAttribute("stroke","#b8bec9");
+      path.setAttribute("stroke-width","1.4");
       svg.appendChild(path);
-
-      const dot=document.createElementNS("http://www.w3.org/2000/svg","circle");
-      dot.setAttribute("cx",x2);
-      dot.setAttribute("cy",y2);
-      dot.setAttribute("r","2.5");
-      dot.setAttribute("fill","#9299a6");
-      svg.appendChild(dot);
     }
   }
 
