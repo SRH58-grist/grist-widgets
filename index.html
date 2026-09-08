@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Organigramme dynamique — Préfecture</title>
+<title>Organigramme dynamique — Préfecture — filtres corrigés</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style id="app-style">
@@ -320,9 +320,36 @@ const CSV_TEXT = `__CSV_DATA__`;
     return 'cat-na';
   }
 
+  function cleanText(v){
+    return String(v == null ? '' : v)
+      .replace(/\u00a0/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+
+  function sameValue(a,b){
+    return cleanText(a).localeCompare(
+      cleanText(b),
+      'fr',
+      {sensitivity:'base'}
+    ) === 0;
+  }
+
+  function cleanRow(row){
+    const out = {};
+    Object.entries(row || {}).forEach(([k,v])=>{
+      const key = String(k).replace(/^\uFEFF/, '').trim();
+      out[key] = typeof v === 'string' ? v.trim() : v;
+    });
+    return out;
+  }
+
   function loadData(csvText){
     const parsed = Papa.parse(csvText, {header:true, skipEmptyLines:true});
-    state.rows = parsed.data.filter(r => r['ID_Poste'] && r['ID_Poste'].trim());
+    state.rows = parsed.data
+      .map(cleanRow)
+      .filter(r => cleanText(r['ID_Poste']));
+
     buildHierarchy();
     populateDirectionOptions();
     document.getElementById('search-input').value = '';
@@ -372,26 +399,57 @@ const CSV_TEXT = `__CSV_DATA__`;
     box.classList.add('show');
   }
 
+  function setSelectOptions(select, values, firstLabel){
+    const previous = select.value;
+    select.innerHTML = '';
+
+    const first = document.createElement('option');
+    first.value = 'all';
+    first.textContent = firstLabel;
+    select.appendChild(first);
+
+    values.forEach(v=>{
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+
+    if([...select.options].some(o=>o.value === previous)){
+      select.value = previous;
+    } else {
+      select.value = 'all';
+    }
+  }
+
   function populateDirectionOptions(){
-    const directions = [...new Set(state.rows.map(r=>r['DIRECTION']).filter(Boolean))];
+    const directions = [...new Set(
+      state.rows.map(r=>cleanText(r['DIRECTION'])).filter(Boolean)
+    )].sort((a,b)=>a.localeCompare(b,'fr',{numeric:true,sensitivity:'base'}));
+
     const sel = document.getElementById('direction-select');
-    sel.innerHTML = '<option value="all">Toute la structure</option>' +
-      directions.map(d=>'<option value="'+escapeHtml(d)+'">'+escapeHtml(d)+'</option>').join('');
-    state.direction = 'all';
+    setSelectOptions(sel, directions, 'Toute la structure');
+    state.direction = sel.value || 'all';
+
     populateServiceOptions();
   }
 
   function populateServiceOptions(){
     const sel = document.getElementById('service-select');
-    let services;
-    if(state.direction==='all'){
-      services = [...new Set(state.rows.map(r=>r['SERVICE']).filter(Boolean))];
-    } else {
-      services = [...new Set(state.rows.filter(r=>r['DIRECTION']===state.direction).map(r=>r['SERVICE']).filter(Boolean))];
+
+    let sourceRows = state.rows;
+    if(state.direction !== 'all'){
+      sourceRows = sourceRows.filter(
+        r=>sameValue(r['DIRECTION'], state.direction)
+      );
     }
-    sel.innerHTML = '<option value="all">Tous les services</option>' +
-      services.map(s=>'<option value="'+escapeHtml(s)+'">'+escapeHtml(s)+'</option>').join('');
-    state.service = 'all';
+
+    const services = [...new Set(
+      sourceRows.map(r=>cleanText(r['SERVICE'])).filter(Boolean)
+    )].sort((a,b)=>a.localeCompare(b,'fr',{numeric:true,sensitivity:'base'}));
+
+    setSelectOptions(sel, services, 'Tous les services');
+    state.service = sel.value || 'all';
   }
 
   function filterLabel(){
@@ -401,13 +459,39 @@ const CSV_TEXT = `__CSV_DATA__`;
   }
 
   function getFilteredIds(){
-    const ids = new Set();
+    const matched = new Set();
+
+    // Postes correspondant réellement au filtre choisi.
     state.nodesById.forEach((node,id)=>{
       const r = node.row;
-      if(state.direction!=='all' && r['DIRECTION']!==state.direction) return;
-      if(state.service!=='all' && r['SERVICE']!==state.service) return;
-      ids.add(id);
+
+      if(
+        state.direction !== 'all' &&
+        !sameValue(r['DIRECTION'], state.direction)
+      ) return;
+
+      if(
+        state.service !== 'all' &&
+        !sameValue(r['SERVICE'], state.service)
+      ) return;
+
+      matched.add(id);
     });
+
+    // On conserve les supérieurs hiérarchiques nécessaires
+    // afin de ne pas casser visuellement la branche.
+    const ids = new Set(matched);
+
+    matched.forEach(id=>{
+      let current = state.nodesById.get(id);
+      let guard = 0;
+
+      while(current && current.parentId && guard++ < 100){
+        ids.add(current.parentId);
+        current = state.nodesById.get(current.parentId);
+      }
+    });
+
     return ids;
   }
 
@@ -637,12 +721,18 @@ const CSV_TEXT = `__CSV_DATA__`;
   });
 
   document.getElementById('direction-select').addEventListener('change', function(){
-    state.direction = this.value;
+    state.direction = this.value || 'all';
+
     populateServiceOptions();
+
+    // Quand on change de direction, on repart sur "Tous les services".
+    state.service = 'all';
+    document.getElementById('service-select').value = 'all';
+
     applyFilterAndRender(true);
   });
   document.getElementById('service-select').addEventListener('change', function(){
-    state.service = this.value;
+    state.service = this.value || 'all';
     applyFilterAndRender(true);
   });
   document.getElementById('depth-slider').addEventListener('input', function(){
