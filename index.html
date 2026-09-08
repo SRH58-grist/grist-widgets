@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V8-safe</title>
+<title>Organigramme Grist V8-safe-fix</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -448,13 +448,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
         return {...mapped,_rowId:r.id,_parentRowId:rawParent};
       });
 
-      refreshFilters();
-      render();
-    }catch(e){
-      console.error(e);
-      $("org").innerHTML=`<div class="empty"><b>Erreur du widget</b><br>${esc(e.message||e)}</div>`;
-    }
-  });
       refreshFilters();
       render();
     }catch(e){
