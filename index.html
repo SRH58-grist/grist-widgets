@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V9</title>
+<title>Organigramme Grist V10-stable</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -33,14 +33,6 @@ button{cursor:pointer}
   box-shadow:0 1px 3px rgba(0,0,0,.07);text-align:left
 }
 .node.encadrement{border-top:4px solid var(--accent)}
-.node.renfort{background:#fff5e8;border-color:#d69a45}
-.node.contrat{background:#f5efff;border-color:#9274bd}
-.node.apprenti{background:#eef8ef;border-color:#6e9f73}
-.node.temporaire{background:#fff1f1;border-color:#bd7474}
-.post-status{
-  display:inline-block;margin-top:4px;padding:1px 5px;border-radius:99px;
-  font-size:9px;font-weight:700;background:rgba(255,255,255,.72)
-}
 .title{font-size:11px;font-weight:700;line-height:1.18}
 .person{font-size:10.5px;margin-top:3px;font-weight:700}
 .meta{margin-top:3px;font-size:9.5px;color:var(--muted);line-height:1.35}
@@ -60,6 +52,17 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   #viewport{padding:0;overflow:visible}
   .node{box-shadow:none}
 }
+
+/* Couleurs des postes - n'affecte pas la hiérarchie */
+.node.renfort{background:#fff5e8;border-color:#d69a45}
+.node.contrat{background:#f5efff;border-color:#9274bd}
+.node.apprenti{background:#eef8ef;border-color:#6e9f73}
+.node.temporaire{background:#fff1f1;border-color:#bd7474}
+.post-status{
+  display:inline-block;margin-top:4px;padding:1px 5px;border-radius:99px;
+  font-size:9px;font-weight:700;background:rgba(255,255,255,.72)
+}
+
 </style>
 </head>
 <body>
@@ -72,7 +75,13 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     <label>Service</label>
     <select id="service"></select>
   </div>
-<div class="field">
+  <div class="field" style="display:none"><label>Type</label>
+    <select id="mode">
+      <option value="fonctionnel">Fonctionnel</option>
+      <option value="nominatif">Nominatif</option>
+    </select>
+  </div>
+  <div class="field">
     <label>Niveau de détail</label>
     <select id="detail">
       <option value="epure">Épuré</option>
@@ -88,30 +97,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 <div id="viewport"><div id="org"></div></div>
 
 <script>
-  // Initialisation Grist en PREMIER : les champs de mapping doivent apparaître même si le reste plante.
-  grist.ready({
-    requiredAccess:"read table",
-    columns:[
-      {name:"Intitule",title:"Intitulé du poste",optional:false},
-      {name:"Parent",title:"Supérieur hiérarchique",type:"Ref",optional:false},
-      {name:"Niveau",title:"Niveau organigramme",optional:false},
-      {name:"Direction",title:"Direction",optional:true},
-      {name:"Service",title:"Service (libellé)",optional:true},
-      {name:"Occupant",title:"Occupant / nom complet",optional:true},
-      {name:"Categorie",title:"Catégorie",optional:true},
-      {name:"Statut",title:"Statut du poste",optional:true},
-      {name:"Quotite",title:"Quotité",optional:true},
-      {name:"IDPoste",title:"ID du poste",optional:true},
-      {name:"Encadrement",title:"Poste d'encadrement ?",type:"Bool",optional:true},
-      {name:"Afficher",title:"Afficher dans l'organigramme ?",type:"Bool",optional:true}
-    ]
-  });
-
-  window.addEventListener("error", (e)=>{
-    const el=document.getElementById("status");
-    if(el) el.textContent="Erreur JavaScript : "+(e.message || "inconnue");
-  });
-
 (() => {
   const $ = id => document.getElementById(id);
   const NODE_W = 175;
@@ -276,7 +261,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     return Math.max(leafCursor,1);
   }
 
-  function statusClass(status){
+  function postStatusClass(status){
     const s=val(status).trim().toLowerCase();
     if(!s || s==="permanent") return "";
     if(s.includes("renfort")) return "renfort";
@@ -288,32 +273,26 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   function nodeHTML(n){
     const detail=$("detail").value;
     const enc=bool(n.Encadrement,false);
-    const sClass=statusClass(n.Statut);
+    const statusClass=postStatusClass(n.Statut);
 
     let h=`<div class="title">${esc(n.Intitule || "(poste sans intitulé)")}</div>`;
 
-    if(detail==="standard" || detail==="detaille"){
-      if(val(n.Occupant).trim()){
-        h+=`<div class="person">${esc(n.Occupant)}</div>`;
-      }
+    // Plus de distinction fonctionnel / nominatif :
+    // l'occupant dépend uniquement du niveau de détail.
+    if((detail==="standard" || detail==="detaille") && val(n.Occupant).trim()){
+      h+=`<div class="person">${esc(n.Occupant)}</div>`;
     }
 
-    // Pour l'instant, on n'affiche PAS les futurs champs Agents :
-    // on les branchera quand la table Agents sera réellement reliée.
-    if(detail==="detaille"){
-      const infos=[];
-      if(val(n.Categorie).trim()) infos.push(`Cat. ${esc(n.Categorie)}`);
-      if(val(n.Quotite).trim()) infos.push(esc(n.Quotite));
-      if(infos.length) h+=`<div class="meta">${infos.join(" • ")}</div>`;
-    }
+    // Les futurs détails Agents (grade, RIFSEEP, statut personne)
+    // seront ajoutés seulement quand la table Agents sera reliée.
 
-    // Le statut du POSTE colore toujours la carte, quel que soit le détail.
+    // Le statut du POSTE reste visible et colore la carte quel que soit le détail.
     const statut=val(n.Statut).trim();
     if(statut && statut.toLowerCase()!=="permanent"){
       h+=`<span class="post-status">${esc(statut)}</span>`;
     }
 
-    return {html:h,enc,sClass};
+    return {html:h,enc,statusClass};
   }
 
   function render(){
@@ -374,7 +353,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
       const block=nodeHTML(n);
       const div=document.createElement("div");
-      div.className="node"+(block.enc?" encadrement":"")+(block.sClass?" "+block.sClass:"");
+      div.className="node"+(block.enc?" encadrement":"")+(block.statusClass?" "+block.statusClass:"");
       div.dataset.rowid=n.id;
       div.style.left=x+"px";
       div.style.top=y+"px";
@@ -427,9 +406,26 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     render();
   }
 
-  ["direction","service","detail"].forEach(id=>$(id).addEventListener("change",changed));
+  ["direction","service","mode","detail"].forEach(id=>$(id).addEventListener("change",changed));
   $("print").addEventListener("click",()=>window.print());
 
+  grist.ready({
+    requiredAccess:"read table",
+    columns:[
+      {name:"Intitule",title:"Intitulé du poste",optional:false},
+      {name:"Parent",title:"Supérieur hiérarchique",type:"Ref",optional:false},
+      {name:"Niveau",title:"Niveau organigramme",optional:false},
+      {name:"Direction",title:"Direction",optional:true},
+      {name:"Service",title:"Service (libellé)",optional:true},
+      {name:"Occupant",title:"Occupant / nom complet",optional:true},
+      {name:"Categorie",title:"Catégorie",optional:true},
+      {name:"Statut",title:"Statut du poste",optional:true},
+      {name:"Quotite",title:"Quotité",optional:true},
+      {name:"IDPoste",title:"ID du poste",optional:true},
+      {name:"Encadrement",title:"Poste d'encadrement ?",type:"Bool",optional:true},
+      {name:"Afficher",title:"Afficher dans l'organigramme ?",type:"Bool",optional:true}
+    ]
+  });
 
   grist.onRecords((data, mappings)=>{
     try{
