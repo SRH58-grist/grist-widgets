@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Organigramme dynamique — Préfecture — Grist</title>
+<title>Organigramme dynamique — Préfecture — Grist V3</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
@@ -136,6 +136,19 @@
   .badge-manager{font-size:10px;color:var(--accent);font-weight:600;}
   .node-title{font-size:12.6px;font-weight:600;line-height:1.25;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .node-occupant{
+    font-size:11.4px;
+    font-weight:700;
+    color:var(--ink);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .node-occupant.vacant{
+    font-weight:500;
+    font-style:italic;
+    color:var(--ink-soft);
+  }
   .node-meta{font-size:10.8px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .node-toggle{font-size:10px;color:var(--primary);font-weight:600;margin-top:1px;}
 
@@ -191,6 +204,17 @@
   .detail-row .k{color:var(--ink-soft);}
   .detail-row .v{font-weight:600;text-align:right;}
 
+
+  /* Vue PDF créée indépendamment du zoom/pan à l'écran. */
+  #print-area{display:none;}
+  @media print{
+    @page{size:A3 landscape;margin:8mm;}
+    body{overflow:visible;background:#fff;}
+    #app{display:none!important;}
+    #print-area{display:block!important;background:#fff;}
+    #print-area svg{display:block;width:100%;height:auto;overflow:visible;}
+  }
+
   @media (max-width:760px){
     header.app-header{padding:10px 14px;}
     .brand{min-width:auto;}
@@ -216,10 +240,6 @@
         <select id="service-select"></select>
       </div>
       <div class="field">
-        <label for="depth-slider">Niveau de détail : <span id="depth-value" class="slider-value"></span></label>
-        <input type="range" id="depth-slider" min="1" max="6" value="2">
-      </div>
-      <div class="field">
         <label for="search-input">Rechercher un poste</label>
         <input type="text" id="search-input" placeholder="Nom du poste…">
       </div>
@@ -229,10 +249,7 @@
           <button class="btn" id="expand-all">Tout déplier</button>
           <button class="btn" id="collapse-all">Tout replier</button>
           <button class="btn" id="recenter">Recentrer</button>
-          <button class="btn" id="export-png">Exporter en image</button>
-          <button class="btn file-btn">Charger un autre CSV
-            <input type="file" id="csv-input" accept=".csv">
-          </button>
+          <button class="btn" id="export-pdf">Exporter en PDF</button>
         </div>
       </div>
     </div>
@@ -272,6 +289,7 @@
     </aside>
   </div>
 </div>
+<div id="print-area"></div>
 
 <script>
 (function(){
@@ -281,12 +299,12 @@
     warnings: [],
     direction: 'all',
     service: 'all',
-    maxVisibleDepth: 2,
+    maxVisibleDepth: 999,
     root: null,
     maxDepthFound: 6
   };
 
-  const NODE_W = 226, NODE_H = 84;
+  const NODE_W = 226, NODE_H = 98;
   const H_GAP = 34, V_GAP = 64;
 
   const svg = d3.select('#chart-svg');
@@ -495,7 +513,15 @@
       matched.add(id);
     });
 
-    // Garder les ancêtres pour conserver les traits hiérarchiques.
+    // Vue SERVICE : on s'arrête au périmètre du service.
+    // Le chef de service devient donc naturellement la racine visible :
+    // aucun SG / Préfet n'est ajouté au-dessus.
+    if(state.service !== 'all'){
+      return new Set(matched);
+    }
+
+    // Vue DIRECTION / ensemble : conserver les ancêtres utiles,
+    // mais ne pas répéter le Préfet dans les vues filtrées.
     const ids = new Set(matched);
 
     matched.forEach(id=>{
@@ -503,8 +529,17 @@
       let guard = 0;
 
       while(current && current.parentId && guard++ < 100){
-        ids.add(current.parentId);
-        current = state.nodesById.get(current.parentId);
+        const parentId = current.parentId;
+
+        if(
+          state.direction !== 'all' &&
+          cleanText(parentId).toUpperCase() === 'PREFET-01'
+        ){
+          break;
+        }
+
+        ids.add(parentId);
+        current = state.nodesById.get(parentId);
       }
     });
 
@@ -551,35 +586,30 @@
   function applyFilterAndRender(resetCollapse){
     const datum = buildDisplayTree();
     const empty = document.getElementById('empty-state');
+
     if(!datum){
       empty.style.display = 'flex';
       gLinks.selectAll('*').remove();
       gNodes.selectAll('*').remove();
       return;
     }
+
     empty.style.display = 'none';
     state.maxDepthFound = Math.max(1, computeMaxDepth(datum));
-    const slider = document.getElementById('depth-slider');
-    slider.max = state.maxDepthFound;
-    if(Number(slider.value) > state.maxDepthFound) slider.value = state.maxDepthFound;
-    state.maxVisibleDepth = Number(slider.value);
-    document.getElementById('depth-value').textContent = state.maxVisibleDepth + ' / ' + state.maxDepthFound;
+    state.maxVisibleDepth = 999;
 
-    render(datum, resetCollapse);
+    // Toujours tout afficher : plus de profondeur masquée au chargement.
+    render(datum, false);
     requestAnimationFrame(recenter);
   }
 
   function render(datum, resetCollapse){
     const rootH = d3.hierarchy(datum, d=>d.children);
     rootH.each(d=>{ d.id = d.data.id; });
-    if(resetCollapse){
-      rootH.each(d=>{
-        if(d.depth >= state.maxVisibleDepth && d.children){
-          d._children = d.children;
-          d.children = null;
-        }
-      });
-    } else if(state.root){
+
+    // Si l'utilisateur a volontairement replié une branche avec +/-,
+    // on conserve cet état lors d'un simple rerender.
+    if(!resetCollapse && state.root){
       const prevCollapsed = new Set();
       state.root.each(d=>{ if(d._children) prevCollapsed.add(d.id); });
       rootH.each(d=>{
@@ -589,6 +619,7 @@
         }
       });
     }
+
     state.root = rootH;
     update();
   }
@@ -611,6 +642,11 @@
       '<div class="node-top"><span class="badge-cat">'+escapeHtml(cat||'—')+'</span>' +
       (enc? '<span class="badge-manager">Encadrement</span>':'') + '</div>' +
       '<div class="node-title">'+escapeHtml(r['Libellé_poste']||'')+'</div>' +
+      ((r['Occupant_Prenom'] || r['Occupant_Nom'])
+        ? '<div class="node-occupant">'+escapeHtml(
+            [r['Occupant_Prenom'], r['Occupant_Nom']].filter(Boolean).join(' ')
+          )+'</div>'
+        : '<div class="node-occupant vacant">Poste vacant</div>') +
       '<div class="node-meta">'+escapeHtml(r['SERVICE']||'')+(nonPerm? ' · '+escapeHtml(statut):'')+'</div>' +
       (direct>0? '<div class="node-toggle">'+direct+' rattaché'+(direct>1?'s':'')+'</div>' : '') +
       '</div>';
@@ -621,7 +657,11 @@
     const links = state.root.links();
     treeLayout(state.root);
 
-    const linkGen = d3.linkVertical().x(d=>d.x).y(d=>d.y);
+    // Connecteurs orthogonaux : vertical -> horizontal -> vertical.
+    const linkGen = ({source, target})=>{
+      const midY = source.y + (target.y - source.y) / 2;
+      return `M${source.x},${source.y} V${midY} H${target.x} V${target.y}`;
+    };
 
     const link = gLinks.selectAll('path.link').data(links, d=>d.target.id);
     link.exit().remove();
@@ -724,6 +764,11 @@
       ['NBI', r['NBI'] || '—'],
       ['Poste budgétaire', boolTrue(r['Poste budgétaire']) ? 'Oui' : 'Non'],
       ['Statut du poste', r['Statut poste'] || '—'],
+      ['Nom', r['Occupant_Nom'] || '—'],
+      ['Prénom', r['Occupant_Prenom'] || '—'],
+      ['Statut de l’agent', r['Occupant_Statut'] || '—'],
+      ['Contractuel', boolTrue(r['Occupant_Contractuel']) ? 'Oui' : 'Non'],
+      ['Début du contrat', r['Occupant_Debut_contrat'] || '—'],
       ['Postes rattachés', countDirect(d)]
     ];
     content.innerHTML = '<h2>'+escapeHtml(r['Libellé_poste'])+'</h2>' +
@@ -747,25 +792,11 @@
     state.service = this.value || 'all';
     applyFilterAndRender(true);
   });
-  document.getElementById('depth-slider').addEventListener('input', function(){
-    state.maxVisibleDepth = Number(this.value);
-    document.getElementById('depth-value').textContent = state.maxVisibleDepth + ' / ' + state.maxDepthFound;
-    render(buildDisplayTree(), true);
-    requestAnimationFrame(recenter);
-  });
   document.getElementById('expand-all').addEventListener('click', expandAll);
   document.getElementById('collapse-all').addEventListener('click', collapseAllExceptRoot);
   document.getElementById('recenter').addEventListener('click', recenter);
   document.getElementById('warnings-dismiss').addEventListener('click', ()=>{
     document.getElementById('warnings').classList.remove('show');
-  });
-
-  document.getElementById('csv-input').addEventListener('change', function(e){
-    const file = e.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = function(evt){ loadData(evt.target.result); };
-    reader.readAsText(file, 'UTF-8');
   });
 
   document.getElementById('search-input').addEventListener('keydown', function(e){
@@ -798,47 +829,67 @@
     });
   });
 
-  document.getElementById('export-png').addEventListener('click', function(){
-    try{
-      const svgNode = document.getElementById('chart-svg');
-      const clone = svgNode.cloneNode(true);
-      clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
-      const w = svgNode.clientWidth, h = svgNode.clientHeight;
-      clone.setAttribute('width', w);
-      clone.setAttribute('height', h);
-      const styleEl = document.createElementNS('http://www.w3.org/2000/svg','style');
-      styleEl.textContent = document.getElementById('app-style').textContent;
-      clone.insertBefore(styleEl, clone.firstChild);
-      const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      bg.setAttribute('x',0); bg.setAttribute('y',0);
-      bg.setAttribute('width',w); bg.setAttribute('height',h);
-      bg.setAttribute('fill','#f3f4f1');
-      clone.insertBefore(bg, clone.firstChild.nextSibling);
-      const svgString = new XMLSerializer().serializeToString(clone);
-      const blob = new Blob([svgString], {type:'image/svg+xml;charset=utf-8'});
-      const url = URL.createObjectURL(blob);
-      const img = new Image();
-      img.onload = function(){
-        const scaleFactor = 2;
-        const canvas = document.createElement('canvas');
-        canvas.width = w*scaleFactor; canvas.height = h*scaleFactor;
-        const ctx = canvas.getContext('2d');
-        ctx.scale(scaleFactor, scaleFactor);
-        ctx.drawImage(img,0,0,w,h);
-        URL.revokeObjectURL(url);
-        canvas.toBlob(function(blob2){
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob2);
-          a.download = 'organigramme.png';
-          a.click();
-        });
-      };
-      img.onerror = function(){ alert('L’export a échoué dans ce navigateur. Une capture d’écran reste possible en solution de repli.'); };
-      img.src = url;
-    }catch(err){
-      alert('L’export a échoué dans ce navigateur. Une capture d’écran reste possible en solution de repli.');
-    }
-  });
+  function exportSelectedViewToPdf(){
+    if(!state.root) return;
+
+    // Construire une copie entièrement dépliée de la vue FILTRÉE actuelle.
+    const datum = buildDisplayTree();
+    if(!datum) return;
+
+    const printRoot = d3.hierarchy(datum, d=>d.children);
+    treeLayout(printRoot);
+
+    const nodes = printRoot.descendants();
+    const links = printRoot.links();
+
+    const minX = d3.min(nodes, d=>d.x) - NODE_W/2 - 25;
+    const maxX = d3.max(nodes, d=>d.x) + NODE_W/2 + 25;
+    const minY = d3.min(nodes, d=>d.y) - NODE_H/2 - 25;
+    const maxY = d3.max(nodes, d=>d.y) + NODE_H/2 + 25;
+    const width = Math.max(1, maxX-minX);
+    const height = Math.max(1, maxY-minY);
+
+    const area = d3.select('#print-area');
+    area.html('');
+
+    const ps = area.append('svg')
+      .attr('xmlns','http://www.w3.org/2000/svg')
+      .attr('viewBox', `${minX} ${minY} ${width} ${height}`)
+      .attr('preserveAspectRatio','xMidYMin meet');
+
+    const pg = ps.append('g');
+
+    pg.selectAll('path.link')
+      .data(links)
+      .enter()
+      .append('path')
+      .attr('class','link')
+      .attr('d', ({source,target})=>{
+        const midY = source.y + (target.y-source.y)/2;
+        return `M${source.x},${source.y} V${midY} H${target.x} V${target.y}`;
+      });
+
+    const pn = pg.selectAll('g.node')
+      .data(nodes)
+      .enter()
+      .append('g')
+      .attr('class','node')
+      .attr('transform', d=>`translate(${d.x},${d.y})`);
+
+    pn.append('foreignObject')
+      .attr('x', -NODE_W/2)
+      .attr('y', -NODE_H/2)
+      .attr('width', NODE_W)
+      .attr('height', NODE_H)
+      .append('xhtml:div')
+      .attr('xmlns','http://www.w3.org/1999/xhtml')
+      .html(d=>nodeHTML(d));
+
+    // Le navigateur ouvre sa boîte d'impression : choisir "Enregistrer au format PDF".
+    setTimeout(()=>window.print(), 80);
+  }
+
+  document.getElementById('export-pdf').addEventListener('click', exportSelectedViewToPdf);
 
   window.addEventListener('resize', ()=>{ requestAnimationFrame(recenter); });
 
@@ -856,7 +907,12 @@
       {name:'RIFSEEP', title:'RIFSEEP', optional:true},
       {name:'NBI', title:'NBI', optional:true},
       {name:'PosteBudgetaire', title:'Poste budgétaire', type:'Bool', optional:true},
-      {name:'StatutPoste', title:'Statut du poste', optional:true}
+      {name:'StatutPoste', title:'Statut du poste', optional:true},
+      {name:'OccupantNom', title:'Occupant — Nom', optional:true},
+      {name:'OccupantPrenom', title:'Occupant — Prénom', optional:true},
+      {name:'OccupantStatut', title:'Occupant — Statut', optional:true},
+      {name:'OccupantContractuel', title:'Occupant — Contractuel ?', type:'Bool', optional:true},
+      {name:'OccupantDebutContrat', title:'Occupant — Début du contrat', optional:true}
     ]
   });
 
@@ -890,6 +946,11 @@
           'NBI': m.NBI,
           'Poste budgétaire': m.PosteBudgetaire,
           'Statut poste': m.StatutPoste,
+          'Occupant_Nom': m.OccupantNom,
+          'Occupant_Prenom': m.OccupantPrenom,
+          'Occupant_Statut': m.OccupantStatut,
+          'Occupant_Contractuel': m.OccupantContractuel,
+          'Occupant_Debut_contrat': m.OccupantDebutContrat,
           '__rowId': record.id,
           '__parentRowId': rawParent
         };
