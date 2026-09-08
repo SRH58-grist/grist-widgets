@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Organigramme Grist</title>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <style>
+    :root{
+      --bg:#f7f8fb; --card:#fff; --text:#20242c; --muted:#69707d;
+      --line:#bcc3cf; --border:#d9dee7; --accent:#323c79;
+      --vacant:#f4f0ee; --radius:10px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+    .toolbar{
+      position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;gap:8px;
+      align-items:end;padding:10px 12px;background:rgba(255,255,255,.97);
+      border-bottom:1px solid var(--border)
+    }
+    .field{display:flex;flex-direction:column;gap:3px}
+    .field label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase}
+    select,button{
+      min-height:34px;border:1px solid var(--border);border-radius:7px;background:#fff;
+      padding:5px 9px;font-size:13px;color:var(--text)
+    }
+    button{cursor:pointer}
+    button:hover{border-color:#aab1bd}
+    .check{display:flex;align-items:center;gap:6px;height:34px;font-size:13px}
+    .spacer{flex:1}
+    .status{font-size:12px;color:var(--muted);padding:0 4px 7px}
+    #canvas{overflow:auto;padding:24px;min-height:calc(100vh - 80px)}
+    .forest{display:flex;justify-content:center;gap:40px;align-items:flex-start;min-width:max-content}
+    .tree,.tree ul{padding-top:20px;position:relative;display:flex;justify-content:center;margin:0;padding-left:0}
+    .tree > ul{padding-top:0}
+    .tree li{
+      list-style:none;text-align:center;position:relative;padding:20px 8px 0 8px;
+    }
+    .tree li::before,.tree li::after{
+      content:"";position:absolute;top:0;right:50%;width:50%;height:20px;
+      border-top:1px solid var(--line)
+    }
+    .tree li::after{right:auto;left:50%;border-left:1px solid var(--line)}
+    .tree li:only-child::before,.tree li:only-child::after{display:none}
+    .tree li:only-child{padding-top:0}
+    .tree li:first-child::before,.tree li:last-child::after{border:0}
+    .tree li:last-child::before{border-right:1px solid var(--line);border-radius:0 5px 0 0}
+    .tree li:first-child::after{border-radius:5px 0 0 0}
+    .tree ul ul::before{
+      content:"";position:absolute;top:0;left:50%;height:20px;border-left:1px solid var(--line)
+    }
+    .node{
+      display:inline-block;min-width:190px;max-width:245px;padding:10px 12px;
+      background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+      box-shadow:0 1px 3px rgba(0,0,0,.06);text-align:left;vertical-align:top;
+      transition:.12s ease;
+    }
+    .node:hover{box-shadow:0 3px 10px rgba(0,0,0,.10);transform:translateY(-1px)}
+    .node.encadrement{border-top:4px solid var(--accent)}
+    .node.vacant{background:var(--vacant);border-style:dashed}
+    .title{font-size:13px;font-weight:700;line-height:1.25}
+    .person{font-size:13px;margin-top:6px;font-weight:700}
+    .vacant-text{font-style:italic;color:#8a655a}
+    .meta{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.35}
+    .badge{
+      display:inline-block;margin-top:6px;margin-right:4px;padding:2px 6px;border-radius:99px;
+      font-size:10px;background:#eef0f7;color:var(--accent);font-weight:700
+    }
+    .empty{
+      max-width:600px;margin:80px auto;padding:20px;background:#fff;border:1px solid var(--border);
+      border-radius:10px;text-align:center;color:var(--muted)
+    }
+    .error{color:#9a2d2d}
+    @media print{
+      .toolbar,.status{display:none!important}
+      body,#canvas{background:white}
+      #canvas{padding:0;overflow:visible}
+      .node{box-shadow:none}
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="field">
+      <label>Direction</label>
+      <select id="direction"></select>
+    </div>
+    <div class="field">
+      <label>Service</label>
+      <select id="service"></select>
+    </div>
+    <div class="field">
+      <label>Type</label>
+      <select id="mode">
+        <option value="nominatif">Nominatif</option>
+        <option value="fonctionnel">Fonctionnel</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Détails</label>
+      <select id="detail">
+        <option value="epure">Épuré</option>
+        <option value="standard" selected>Standard</option>
+        <option value="detaille">Détaillé</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="vacants" checked> Postes vacants</label>
+    <div class="spacer"></div>
+    <button id="print">Imprimer / PDF</button>
+  </div>
+  <div class="status" id="status"></div>
+  <div id="canvas"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let rows = [];
+  let mappings = null;
+
+  function rawRef(v) {
+    if (v == null || v === "") return null;
+    if (typeof v === "number") return v;
+    if (Array.isArray(v)) {
+      // Valeurs encodées possibles de Grist : ["R", table, rowId] / ["r", ...]
+      const last = v[v.length - 1];
+      if (typeof last === "number") return last;
+    }
+    if (typeof v === "object" && v.id != null) return v.id;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function val(v) {
+    if (v == null) return "";
+    if (Array.isArray(v)) return v.join(", ");
+    return String(v);
+  }
+
+  function truthy(v, defaultValue=false) {
+    if (v == null || v === "") return defaultValue;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v !== 0;
+    return ["true","oui","yes","1","x"].includes(String(v).toLowerCase());
+  }
+
+  function mapRows(data, currentMappings) {
+    mappings = currentMappings || mappings;
+    return data.map(r => {
+      const m = grist.mapColumnNames(r, {mappings}) || r;
+      return {...m, _rowId:r.id};
+    });
+  }
+
+  function uniqueSorted(values) {
+    return [...new Set(values.filter(v => v !== "" && v != null))]
+      .sort((a,b)=>String(a).localeCompare(String(b), "fr", {numeric:true}));
+  }
+
+  function fillSelect(el, values, allLabel) {
+    const previous = el.value;
+    el.innerHTML = "";
+    const all = document.createElement("option");
+    all.value = ""; all.textContent = allLabel; el.appendChild(all);
+    values.forEach(v => {
+      const o = document.createElement("option");
+      o.value = String(v); o.textContent = String(v); el.appendChild(o);
+    });
+    if ([...el.options].some(o => o.value === previous)) el.value = previous;
+  }
+
+  function refreshFilters() {
+    fillSelect($("direction"), uniqueSorted(rows.map(r => val(r.Direction))), "Toutes");
+    const d = $("direction").value;
+    const services = rows
+      .filter(r => !d || val(r.Direction) === d)
+      .map(r => val(r.Service));
+    fillSelect($("service"), uniqueSorted(services), "Tous");
+  }
+
+  function filteredWithAncestors() {
+    const direction = $("direction").value;
+    const service = $("service").value;
+    const showVacant = $("vacants").checked;
+
+    const byId = new Map(rows.map(r => [Number(r._rowId), r]));
+    const base = rows.filter(r => {
+      if (r.Afficher !== undefined && r.Afficher !== null && !truthy(r.Afficher, true)) return false;
+      if (direction && val(r.Direction) !== direction) return false;
+      if (service && val(r.Service) !== service) return false;
+      const isVacant = !val(r.Occupant).trim();
+      if (!showVacant && isVacant) return false;
+      return true;
+    });
+
+    const keep = new Map(base.map(r => [Number(r._rowId), r]));
+    for (const r of base) {
+      let parentId = rawRef(r.Parent);
+      let guard = 0;
+      while (parentId && byId.has(parentId) && guard++ < 50) {
+        const p = byId.get(parentId);
+        // Si une direction est explicitement choisie, ne pas remonter dans une autre direction.
+        if (direction && val(p.Direction) !== direction) break;
+        keep.set(parentId, p);
+        parentId = rawRef(p.Parent);
+      }
+    }
+    return [...keep.values()];
+  }
+
+  function buildForest(data) {
+    const nodes = new Map(data.map(r => [Number(r._rowId), {...r, children:[]}]));
+    const roots = [];
+    for (const n of nodes.values()) {
+      const pid = rawRef(n.Parent);
+      if (pid && nodes.has(pid) && pid !== n._rowId) nodes.get(pid).children.push(n);
+      else roots.push(n);
+    }
+    const sortFn = (a,b) => {
+      const ao = Number(a.Ordre); const bo = Number(b.Ordre);
+      if (Number.isFinite(ao) || Number.isFinite(bo)) {
+        return (Number.isFinite(ao)?ao:999999) - (Number.isFinite(bo)?bo:999999);
+      }
+      return val(a.Intitule).localeCompare(val(b.Intitule),"fr");
+    };
+    const sortRec = n => { n.children.sort(sortFn); n.children.forEach(sortRec); };
+    roots.sort(sortFn); roots.forEach(sortRec);
+    return roots;
+  }
+
+  function esc(s) {
+    return val(s).replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    })[c]);
+  }
+
+  function nodeHtml(n) {
+    const mode = $("mode").value;
+    const detail = $("detail").value;
+    const occupant = val(n.Occupant).trim();
+    const vacant = !occupant;
+    const enc = truthy(n.Encadrement, false);
+
+    let h = `<div class="node ${enc?"encadrement":""} ${vacant?"vacant":""}">`;
+    h += `<div class="title">${esc(n.Intitule || "(poste sans intitulé)")}</div>`;
+
+    if (mode === "nominatif") {
+      if (occupant) h += `<div class="person">${esc(occupant)}</div>`;
+      else h += `<div class="person vacant-text">Poste vacant</div>`;
+    }
+
+    if (detail !== "epure") {
+      const bits = [];
+      if (n.Categorie) bits.push(`Cat. ${esc(n.Categorie)}`);
+      if (n.Statut) bits.push(esc(n.Statut));
+      if (n.Quotite) bits.push(esc(n.Quotite));
+      if (bits.length) h += `<div class="meta">${bits.join(" • ")}</div>`;
+    }
+    if (detail === "detaille") {
+      const bits2 = [];
+      if (n.IDPoste) bits2.push(esc(n.IDPoste));
+      if (n.Service) bits2.push(esc(n.Service));
+      if (bits2.length) h += `<div class="meta">${bits2.join(" • ")}</div>`;
+      if (enc) h += `<span class="badge">Encadrement</span>`;
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  function branchHtml(n) {
+    const kids = n.children.length
+      ? `<ul>${n.children.map(c => `<li>${branchHtml(c)}</li>`).join("")}</ul>`
+      : "";
+    return `${nodeHtml(n)}${kids}`;
+  }
+
+  function render() {
+    if (!rows.length) {
+      $("canvas").innerHTML = `<div class="empty">Aucun poste à afficher.</div>`;
+      $("status").textContent = "";
+      return;
+    }
+    const data = filteredWithAncestors();
+    const roots = buildForest(data);
+    $("status").textContent = `${data.length} poste${data.length>1?"s":""} affiché${data.length>1?"s":""}`;
+    if (!roots.length) {
+      $("canvas").innerHTML = `<div class="empty">Aucun résultat avec ces filtres.</div>`;
+      return;
+    }
+    $("canvas").innerHTML = `<div class="forest">${
+      roots.map(r => `<div class="tree"><ul><li>${branchHtml(r)}</li></ul></div>`).join("")
+    }</div>`;
+  }
+
+  function onChange() {
+    if (this === $("direction")) {
+      const d = $("direction").value;
+      const services = rows.filter(r => !d || val(r.Direction) === d).map(r => val(r.Service));
+      fillSelect($("service"), uniqueSorted(services), "Tous");
+    }
+    render();
+  }
+
+  ["direction","service","mode","detail","vacants"].forEach(id => $(id).addEventListener("change", onChange));
+  $("print").addEventListener("click", () => window.print());
+
+  grist.ready({
+    requiredAccess: "read table",
+    columns: [
+      {name:"Intitule", title:"Intitulé du poste", type:"Text", optional:false},
+      {name:"Parent", title:"Supérieur hiérarchique", type:"Ref", optional:false},
+      {name:"Direction", title:"Direction", optional:true},
+      {name:"Service", title:"Service (libellé)", optional:true},
+      {name:"Occupant", title:"Occupant / nom complet", optional:true},
+      {name:"Categorie", title:"Catégorie", optional:true},
+      {name:"Statut", title:"Statut du poste", optional:true},
+      {name:"Quotite", title:"Quotité", optional:true},
+      {name:"IDPoste", title:"ID du poste", optional:true},
+      {name:"Encadrement", title:"Poste d'encadrement ?", type:"Bool", optional:true},
+      {name:"Ordre", title:"Ordre organigramme", optional:true},
+      {name:"Afficher", title:"Afficher dans l'organigramme ?", type:"Bool", optional:true}
+    ]
+  });
+
+  grist.onRecords((data, currentMappings) => {
+    try {
+      rows = mapRows(data, currentMappings);
+      refreshFilters();
+      render();
+    } catch (e) {
+      console.error(e);
+      $("canvas").innerHTML = `<div class="empty error"><b>Erreur du widget</b><br>${esc(e.message || e)}</div>`;
+    }
+  });
+})();
+</script>
+</body>
+</html>
