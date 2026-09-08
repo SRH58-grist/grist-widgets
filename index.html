@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V7</title>
+<title>Organigramme Grist V8</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -33,6 +33,15 @@ button{cursor:pointer}
   box-shadow:0 1px 3px rgba(0,0,0,.07);text-align:left
 }
 .node.encadrement{border-top:4px solid var(--accent)}
+.node.nonpermanent{border-width:1.5px}
+.node.renfort{background:#fff5e8;border-color:#e0a04b}
+.node.contrat{background:#f5efff;border-color:#9b7bc6}
+.node.apprenti{background:#eef8ef;border-color:#75a87a}
+.node.temporaire{background:#fff1f1;border-color:#c77d7d}
+.post-status{
+  display:inline-block;margin-top:4px;padding:1px 5px;border-radius:99px;
+  font-size:9px;font-weight:700;background:rgba(255,255,255,.72)
+}
 .title{font-size:11px;font-weight:700;line-height:1.18}
 .person{font-size:10.5px;margin-top:3px;font-weight:700}
 .meta{margin-top:3px;font-size:9.5px;color:var(--muted);line-height:1.35}
@@ -64,19 +73,12 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     <label>Service</label>
     <select id="service"></select>
   </div>
-  <div class="field">
-    <label>Type</label>
-    <select id="mode">
-      <option value="fonctionnel">Fonctionnel</option>
-      <option value="nominatif">Nominatif</option>
-    </select>
-  </div>
-  <div class="field">
-    <label>Détails</label>
+<div class="field">
+    <label>Niveau de détail</label>
     <select id="detail">
       <option value="epure">Épuré</option>
-      <option value="standard" selected>Standard</option>
-      <option value="detaille">Détaillé</option>
+      <option value="occupant" selected>Avec occupant</option>
+      <option value="complet">Complet</option>
     </select>
   </div>
   <div class="spacer"></div>
@@ -251,35 +253,45 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     return Math.max(leafCursor,1);
   }
 
+  function postStatusClass(status){
+    const s=val(status).trim().toLowerCase();
+    if(!s || s==="permanent") return "";
+    if(s.includes("renfort")) return "nonpermanent renfort";
+    if(s.includes("contrat de projet") || s.includes("projet")) return "nonpermanent contrat";
+    if(s.includes("apprenti")) return "nonpermanent apprenti";
+    return "nonpermanent temporaire";
+  }
+
   function nodeHTML(n){
-    const mode=$("mode").value;
     const detail=$("detail").value;
     const enc=bool(n.Encadrement,false);
+    const statusClass=postStatusClass(n.StatutPoste);
 
     let h=`<div class="title">${esc(n.Intitule || "(poste sans intitulé)")}</div>`;
 
-    if(mode==="nominatif" && val(n.Occupant).trim()){
-      h+=`<div class="person">${esc(n.Occupant)}</div>`;
+    if(detail==="occupant" || detail==="complet"){
+      const occupant=val(n.Occupant).trim();
+      if(occupant){
+        h+=`<div class="person">${esc(occupant)}</div>`;
+      }else{
+        h+=`<div class="meta">Poste non renseigné</div>`;
+      }
     }
 
-    if(detail!=="epure"){
-      const bits=[];
-      if(n.Categorie) bits.push(`Cat. ${esc(n.Categorie)}`);
-      if(n.Statut) bits.push(esc(n.Statut));
-      if(n.Quotite) bits.push(esc(n.Quotite));
-      if(bits.length) h+=`<div class="meta">${bits.join(" • ")}</div>`;
+    if(detail==="complet"){
+      const infos=[];
+      if(val(n.Grade).trim()) infos.push(`Grade : ${esc(n.Grade)}`);
+      if(val(n.GroupeRifseep).trim()) infos.push(`RIFSEEP : ${esc(n.GroupeRifseep)}`);
+      if(val(n.StatutPersonne).trim()) infos.push(`Statut : ${esc(n.StatutPersonne)}`);
+      if(infos.length) h+=`<div class="meta">${infos.join("<br>")}</div>`;
     }
 
-    if(detail==="detaille"){
-      const bits2=[];
-      if(n.IDPoste) bits2.push(esc(n.IDPoste));
-      if(n.Service) bits2.push(esc(n.Service));
-      if(n.level!=null) bits2.push(`Niv. ${n.level}`);
-      if(bits2.length) h+=`<div class="meta">${bits2.join(" • ")}</div>`;
-      if(enc) h+=`<span class="badge">Encadrement</span>`;
+    const statut=val(n.StatutPoste).trim();
+    if(statut && statut.toLowerCase()!=="permanent"){
+      h+=`<span class="post-status">${esc(statut)}</span>`;
     }
 
-    return {html:h,enc};
+    return {html:h,enc,statusClass};
   }
 
   function render(){
@@ -340,7 +352,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
       const block=nodeHTML(n);
       const div=document.createElement("div");
-      div.className="node"+(block.enc?" encadrement":"");
+      div.className="node"+(block.enc?" encadrement":"")+(block.statusClass?" "+block.statusClass:"");
       div.dataset.rowid=n.id;
       div.style.left=x+"px";
       div.style.top=y+"px";
@@ -393,7 +405,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     render();
   }
 
-  ["direction","service","mode","detail"].forEach(id=>$(id).addEventListener("change",changed));
+  ["direction","service","detail"].forEach(id=>$(id).addEventListener("change",changed));
   $("print").addEventListener("click",()=>window.print());
 
   grist.ready({
@@ -404,12 +416,16 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
       {name:"Niveau",title:"Niveau organigramme",optional:false},
       {name:"Direction",title:"Direction",optional:true},
       {name:"Service",title:"Service (libellé)",optional:true},
-      {name:"Occupant",title:"Occupant / nom complet",optional:true},
-      {name:"Categorie",title:"Catégorie",optional:true},
-      {name:"Statut",title:"Statut du poste",optional:true},
-      {name:"Quotite",title:"Quotité",optional:true},
-      {name:"IDPoste",title:"ID du poste",optional:true},
+
+      {name:"StatutPoste",title:"Statut du poste",optional:true},
       {name:"Encadrement",title:"Poste d'encadrement ?",type:"Bool",optional:true},
+
+      {name:"Occupant",title:"Occupant / nom complet",optional:true},
+      {name:"Grade",title:"Grade de la personne",optional:true},
+      {name:"GroupeRifseep",title:"Groupe RIFSEEP",optional:true},
+      {name:"StatutPersonne",title:"Statut de la personne",optional:true},
+
+      {name:"IDPoste",title:"ID du poste",optional:true},
       {name:"Afficher",title:"Afficher dans l'organigramme ?",type:"Bool",optional:true}
     ]
   });
