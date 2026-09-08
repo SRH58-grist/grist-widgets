@@ -3,67 +3,430 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V2</title>
+<title>Organigramme Grist V3</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
-:root{--bg:#f7f8fb;--card:#fff;--text:#20242c;--muted:#69707d;--line:#b9c0cb;--border:#d9dee7;--accent:#323c79}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
-.toolbar{position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;gap:8px;align-items:end;padding:10px 12px;background:#fff;border-bottom:1px solid var(--border)}
-.field{display:flex;flex-direction:column;gap:3px}.field label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase}
-select,button{min-height:34px;border:1px solid var(--border);border-radius:7px;background:#fff;padding:5px 9px;font-size:13px;color:var(--text)}
-.spacer{flex:1}.status{font-size:12px;color:var(--muted);padding:7px 12px}#canvas{overflow:auto;padding:28px;min-height:calc(100vh - 90px)}
-.org-wrap{position:relative;min-width:max-content;margin:0 auto}.level{position:relative;display:flex;justify-content:center;gap:26px;margin:0 auto 70px;min-height:88px;align-items:flex-start}
-.node{position:relative;z-index:2;width:220px;min-height:78px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);text-align:left}
-.node.encadrement{border-top:4px solid var(--accent)}.title{font-size:13px;font-weight:700;line-height:1.25}.person{font-size:13px;margin-top:6px;font-weight:700}
-.meta{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.35}.badge{display:inline-block;margin-top:6px;padding:2px 6px;border-radius:99px;font-size:10px;background:#eef0f7;color:var(--accent);font-weight:700}
-svg.lines{position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:1}
-.empty{max-width:640px;margin:80px auto;padding:20px;background:#fff;border:1px solid var(--border);border-radius:10px;text-align:center;color:var(--muted)}
-.warn{color:#8a5b2e}@media print{.toolbar,.status{display:none!important}body,#canvas{background:white}#canvas{padding:0;overflow:visible}.node{box-shadow:none}}
+:root{
+  --bg:#f7f8fb;--card:#fff;--text:#20242c;--muted:#69707d;
+  --line:#b8bec9;--border:#d9dee7;--accent:#323c79;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+.toolbar{
+  position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:8px;align-items:end;
+  padding:10px 12px;background:#fff;border-bottom:1px solid var(--border)
+}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase}
+select,button{
+  min-height:34px;border:1px solid var(--border);border-radius:7px;background:#fff;
+  padding:5px 9px;font-size:13px;color:var(--text)
+}
+button{cursor:pointer}
+.spacer{flex:1}
+.status{padding:7px 12px;font-size:12px;color:var(--muted)}
+#viewport{overflow:auto;min-height:calc(100vh - 88px);padding:24px}
+#org{position:relative;margin:0 auto}
+.node{
+  position:absolute;z-index:3;width:220px;min-height:78px;padding:10px 12px;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 1px 3px rgba(0,0,0,.07);text-align:left
+}
+.node.encadrement{border-top:4px solid var(--accent)}
+.title{font-size:13px;font-weight:700;line-height:1.25}
+.person{font-size:13px;margin-top:6px;font-weight:700}
+.meta{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.35}
+.badge{
+  display:inline-block;margin-top:6px;padding:2px 6px;border-radius:99px;
+  font-size:10px;background:#eef0f7;color:var(--accent);font-weight:700
+}
+svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-events:none}
+.empty{
+  max-width:680px;margin:80px auto;padding:20px;background:#fff;
+  border:1px solid var(--border);border-radius:10px;text-align:center;color:var(--muted)
+}
+.warn{color:#885d2e}
+@media print{
+  .toolbar,.status{display:none!important}
+  body,#viewport{background:#fff}
+  #viewport{padding:0;overflow:visible}
+  .node{box-shadow:none}
+}
 </style>
 </head>
 <body>
 <div class="toolbar">
-  <div class="field"><label>Direction</label><select id="direction"></select></div>
-  <div class="field"><label>Service</label><select id="service"></select></div>
-  <div class="field"><label>Type</label><select id="mode"><option value="fonctionnel">Fonctionnel</option><option value="nominatif">Nominatif</option></select></div>
-  <div class="field"><label>Détails</label><select id="detail"><option value="epure">Épuré</option><option value="standard" selected>Standard</option><option value="detaille">Détaillé</option></select></div>
-  <div class="spacer"></div><button id="print">Imprimer / PDF</button>
+  <div class="field">
+    <label>Direction</label>
+    <select id="direction"></select>
+  </div>
+  <div class="field">
+    <label>Service</label>
+    <select id="service"></select>
+  </div>
+  <div class="field">
+    <label>Type</label>
+    <select id="mode">
+      <option value="fonctionnel">Fonctionnel</option>
+      <option value="nominatif">Nominatif</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Détails</label>
+    <select id="detail">
+      <option value="epure">Épuré</option>
+      <option value="standard" selected>Standard</option>
+      <option value="detaille">Détaillé</option>
+    </select>
+  </div>
+  <div class="spacer"></div>
+  <button id="print">Imprimer / PDF</button>
 </div>
-<div class="status" id="status"></div><div id="canvas"></div>
+
+<div class="status" id="status"></div>
+<div id="viewport"><div id="org"></div></div>
+
 <script>
 (() => {
-const $=id=>document.getElementById(id);let rows=[],mappings=null;
-const val=v=>v==null?"":Array.isArray(v)?v.join(", "):String(v);
-const truthy=(v,d=false)=>v==null||v===""?d:typeof v==="boolean"?v:typeof v==="number"?v!==0:["true","oui","yes","1","x"].includes(String(v).toLowerCase());
-function refId(v){if(v==null||v==="")return null;if(typeof v==="number")return v;if(Array.isArray(v)){for(let i=v.length-1;i>=0;i--)if(typeof v[i]==="number")return v[i]}if(typeof v==="object"&&v.id!=null)return Number(v.id);const n=Number(v);return Number.isFinite(n)?n:null}
-const num=(v,f=999999)=>Number.isFinite(Number(v))?Number(v):f;
-const esc=s=>val(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-function mapRows(data,currentMappings){mappings=currentMappings||mappings;return data.map(r=>({...((grist.mapColumnNames(r,{mappings}))||{}),_rowId:r.id}))}
-const uniq=a=>[...new Set(a.filter(v=>v!==""&&v!=null))].sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}));
-function fill(el,values,label){const prev=el.value;el.innerHTML=`<option value="">${label}</option>`;values.forEach(v=>{const o=document.createElement("option");o.value=String(v);o.textContent=String(v);el.appendChild(o)});if([...el.options].some(o=>o.value===prev))el.value=prev}
-function refreshFilters(){fill($("direction"),uniq(rows.map(r=>val(r.Direction))),"Toutes");const d=$("direction").value;fill($("service"),uniq(rows.filter(r=>!d||val(r.Direction)===d).map(r=>val(r.Service))),"Tous")}
-function filteredRows(){const d=$("direction").value,s=$("service").value,byId=new Map(rows.map(r=>[Number(r._rowId),r]));const base=rows.filter(r=>(r.Afficher===undefined||r.Afficher===null||truthy(r.Afficher,true))&&(!d||val(r.Direction)===d)&&(!s||val(r.Service)===s));const keep=new Map(base.map(r=>[Number(r._rowId),r]));for(const r of base){let p=refId(r.Parent),guard=0;while(p&&byId.has(p)&&guard++<100){const parent=byId.get(p);if(d&&val(parent.Direction)!==d)break;keep.set(p,parent);p=refId(parent.Parent)}}return [...keep.values()]}
-function nodeHtml(n){const mode=$("mode").value,detail=$("detail").value,enc=truthy(n.Encadrement,false);let h=`<div class="node ${enc?"encadrement":""}" data-rowid="${n._rowId}"><div class="title">${esc(n.Intitule||"(poste sans intitulé)")}</div>`;if(mode==="nominatif"&&val(n.Occupant).trim())h+=`<div class="person">${esc(n.Occupant)}</div>`;if(detail!=="epure"){const b=[];if(n.Categorie)b.push(`Cat. ${esc(n.Categorie)}`);if(n.Statut)b.push(esc(n.Statut));if(n.Quotite)b.push(esc(n.Quotite));if(b.length)h+=`<div class="meta">${b.join(" • ")}</div>`}if(detail==="detaille"){const b=[];if(n.IDPoste)b.push(esc(n.IDPoste));if(n.Service)b.push(esc(n.Service));if(n.Niveau!==undefined&&n.Niveau!==null&&n.Niveau!=="")b.push(`Niv. ${esc(n.Niveau)}`);if(b.length)h+=`<div class="meta">${b.join(" • ")}</div>`;if(enc)h+=`<span class="badge">Encadrement</span>`}return h+`</div>`}
-function render(){const data=filteredRows();$("status").textContent=`${data.length} poste${data.length>1?"s":""} affiché${data.length>1?"s":""}`;if(!data.length){$("canvas").innerHTML=`<div class="empty">Aucun poste à afficher.</div>`;return}if(data.some(r=>r.Niveau===undefined||r.Niveau===null||r.Niveau==="")){$("canvas").innerHTML=`<div class="empty warn">Mappe <b>Niveau organigramme</b> vers ta colonne <b>niv_organigramme</b>.</div>`;return}const levels=uniq(data.map(r=>num(r.Niveau))).sort((a,b)=>a-b),grouped=new Map(levels.map(l=>[l,[]]));data.forEach(r=>grouped.get(num(r.Niveau)).push(r));for(const arr of grouped.values())arr.sort((a,b)=>num(a.Ordre)-num(b.Ordre)||val(a.Intitule).localeCompare(val(b.Intitule),"fr"));let html=`<div class="org-wrap" id="orgWrap"><svg class="lines" id="lines"></svg>`;for(const l of levels){html+=`<div class="level" data-level="${l}">`;for(const r of grouped.get(l))html+=nodeHtml(r);html+=`</div>`}html+=`</div>`;$("canvas").innerHTML=html;requestAnimationFrame(drawLines)}
-function drawLines(){const wrap=$("orgWrap"),svg=$("lines");if(!wrap||!svg)return;const wr=wrap.getBoundingClientRect();svg.setAttribute("viewBox",`0 0 ${wr.width} ${wr.height}`);svg.innerHTML="";const ids=new Set([...wrap.querySelectorAll(".node")].map(el=>Number(el.dataset.rowid)));for(const r of filteredRows()){const pid=refId(r.Parent);if(!pid||!ids.has(pid)||!ids.has(Number(r._rowId)))continue;const c=wrap.querySelector(`.node[data-rowid="${r._rowId}"]`),p=wrap.querySelector(`.node[data-rowid="${pid}"]`);if(!c||!p)continue;const cr=c.getBoundingClientRect(),pr=p.getBoundingClientRect(),x1=pr.left-wr.left+pr.width/2,y1=pr.bottom-wr.top,x2=cr.left-wr.left+cr.width/2,y2=cr.top-wr.top,mid=(y1+y2)/2,path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttribute("d",`M ${x1} ${y1} V ${mid} H ${x2} V ${y2}`);path.setAttribute("fill","none");path.setAttribute("stroke","#b9c0cb");path.setAttribute("stroke-width","1.4");svg.appendChild(path)}}
-function onChange(){if(this===$("direction")){const d=$("direction").value;fill($("service"),uniq(rows.filter(r=>!d||val(r.Direction)===d).map(r=>val(r.Service))),"Tous")}render()}
-["direction","service","mode","detail"].forEach(id=>$(id).addEventListener("change",onChange));$("print").addEventListener("click",()=>window.print());window.addEventListener("resize",()=>requestAnimationFrame(drawLines));
-grist.ready({requiredAccess:"read table",columns:[
-{name:"Intitule",title:"Intitulé du poste",optional:false},
-{name:"Parent",title:"Supérieur hiérarchique",type:"Ref",optional:false},
-{name:"Niveau",title:"Niveau organigramme",optional:false},
-{name:"Ordre",title:"Ordre organigramme",optional:true},
-{name:"Direction",title:"Direction",optional:true},
-{name:"Service",title:"Service (libellé)",optional:true},
-{name:"Occupant",title:"Occupant / nom complet",optional:true},
-{name:"Categorie",title:"Catégorie",optional:true},
-{name:"Statut",title:"Statut du poste",optional:true},
-{name:"Quotite",title:"Quotité",optional:true},
-{name:"IDPoste",title:"ID du poste",optional:true},
-{name:"Encadrement",title:"Poste d'encadrement ?",type:"Bool",optional:true},
-{name:"Afficher",title:"Afficher dans l'organigramme ?",type:"Bool",optional:true}
-]});
-grist.onRecords((data,currentMappings)=>{try{rows=mapRows(data,currentMappings);refreshFilters();render()}catch(e){console.error(e);$("canvas").innerHTML=`<div class="empty"><b>Erreur du widget</b><br>${esc(e.message||e)}</div>`}})
+  const $ = id => document.getElementById(id);
+  const NODE_W = 220;
+  const NODE_H = 84;
+  const X_GAP = 42;
+  const Y_GAP = 90;
+  const PAD = 30;
+
+  let rows = [];
+
+  function val(v){
+    if(v == null) return "";
+    if(Array.isArray(v)) {
+      // pour les colonnes de type ChoiceList, etc.
+      return v.filter(x => typeof x === "string").join(", ");
+    }
+    return String(v);
+  }
+
+  function nval(v){
+    if(v == null || v === "") return null;
+    if(typeof v === "number") return v;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function bool(v, def=false){
+    if(v == null || v === "") return def;
+    if(typeof v === "boolean") return v;
+    if(typeof v === "number") return v !== 0;
+    return ["true","oui","yes","1","x"].includes(String(v).toLowerCase());
+  }
+
+  function refId(v){
+    if(v == null || v === "") return null;
+    if(typeof v === "number") return v;
+    if(Array.isArray(v)){
+      // Les références Grist peuvent être encodées dans une liste.
+      for(let i=v.length-1;i>=0;i--){
+        if(typeof v[i] === "number") return v[i];
+      }
+      return null;
+    }
+    if(typeof v === "object" && v.id != null) return Number(v.id);
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function esc(s){
+    return val(s).replace(/[&<>"']/g,c=>({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    })[c]);
+  }
+
+  function unique(values){
+    return [...new Set(values.filter(v => v !== "" && v != null))]
+      .sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}));
+  }
+
+  function setOptions(el, values, label){
+    const previous = el.value;
+    el.innerHTML = "";
+    const o0 = document.createElement("option");
+    o0.value = ""; o0.textContent = label; el.appendChild(o0);
+    values.forEach(v=>{
+      const o=document.createElement("option");
+      o.value=String(v); o.textContent=String(v); el.appendChild(o);
+    });
+    if([...el.options].some(o=>o.value===previous)) el.value=previous;
+  }
+
+  function refreshFilters(){
+    setOptions($("direction"), unique(rows.map(r=>val(r.Direction))), "Toutes");
+    const d=$("direction").value;
+    setOptions(
+      $("service"),
+      unique(rows.filter(r=>!d || val(r.Direction)===d).map(r=>val(r.Service))),
+      "Tous"
+    );
+  }
+
+  function visibleRows(){
+    const d=$("direction").value;
+    const s=$("service").value;
+    const byId=new Map(rows.map(r=>[Number(r._rowId),r]));
+
+    const base=rows.filter(r=>{
+      if(r.Afficher !== undefined && r.Afficher !== null && !bool(r.Afficher,true)) return false;
+      if(d && val(r.Direction)!==d) return false;
+      if(s && val(r.Service)!==s) return false;
+      return true;
+    });
+
+    // Ajouter les ancêtres indispensables pour ne pas casser la branche.
+    const keep=new Map(base.map(r=>[Number(r._rowId),r]));
+    for(const r of base){
+      let pid=refId(r.Parent), guard=0;
+      while(pid && byId.has(pid) && guard++<100){
+        const p=byId.get(pid);
+        if(d && val(p.Direction)!==d) break;
+        keep.set(pid,p);
+        pid=refId(p.Parent);
+      }
+    }
+    return [...keep.values()];
+  }
+
+  function buildGraph(data){
+    const nodes=new Map();
+    data.forEach(r=>nodes.set(Number(r._rowId),{
+      ...r,
+      id:Number(r._rowId),
+      parentId:refId(r.Parent),
+      level:nval(r.Niveau),
+      order:nval(r.Ordre),
+      children:[]
+    }));
+
+    const roots=[];
+    for(const n of nodes.values()){
+      if(n.parentId && nodes.has(n.parentId) && n.parentId!==n.id){
+        nodes.get(n.parentId).children.push(n);
+      }else{
+        roots.push(n);
+      }
+    }
+
+    const sorter=(a,b)=>{
+      const oa=a.order ?? 999999, ob=b.order ?? 999999;
+      if(oa!==ob) return oa-ob;
+      return val(a.Intitule).localeCompare(val(b.Intitule),"fr");
+    };
+
+    for(const n of nodes.values()) n.children.sort(sorter);
+    roots.sort(sorter);
+
+    return {nodes,roots};
+  }
+
+  // Attribution d'une "colonne logique" :
+  // les feuilles reçoivent une position de gauche à droite ;
+  // les parents sont centrés au-dessus de leurs enfants.
+  function assignX(roots){
+    let leafCursor=0;
+
+    function walk(node){
+      if(!node.children.length){
+        node.logicalX=leafCursor++;
+        return node.logicalX;
+      }
+      const childXs=node.children.map(walk);
+      node.logicalX=(Math.min(...childXs)+Math.max(...childXs))/2;
+      return node.logicalX;
+    }
+
+    for(const root of roots){
+      walk(root);
+      // espace entre arbres racines distincts
+      leafCursor += 1;
+    }
+    return Math.max(leafCursor,1);
+  }
+
+  function nodeHTML(n){
+    const mode=$("mode").value;
+    const detail=$("detail").value;
+    const enc=bool(n.Encadrement,false);
+
+    let h=`<div class="title">${esc(n.Intitule || "(poste sans intitulé)")}</div>`;
+
+    if(mode==="nominatif" && val(n.Occupant).trim()){
+      h+=`<div class="person">${esc(n.Occupant)}</div>`;
+    }
+
+    if(detail!=="epure"){
+      const bits=[];
+      if(n.Categorie) bits.push(`Cat. ${esc(n.Categorie)}`);
+      if(n.Statut) bits.push(esc(n.Statut));
+      if(n.Quotite) bits.push(esc(n.Quotite));
+      if(bits.length) h+=`<div class="meta">${bits.join(" • ")}</div>`;
+    }
+
+    if(detail==="detaille"){
+      const bits2=[];
+      if(n.IDPoste) bits2.push(esc(n.IDPoste));
+      if(n.Service) bits2.push(esc(n.Service));
+      if(n.level!=null) bits2.push(`Niv. ${n.level}`);
+      if(bits2.length) h+=`<div class="meta">${bits2.join(" • ")}</div>`;
+      if(enc) h+=`<span class="badge">Encadrement</span>`;
+    }
+
+    return {html:h,enc};
+  }
+
+  function render(){
+    const data=visibleRows();
+
+    if(!data.length){
+      $("status").textContent="0 poste affiché";
+      $("org").innerHTML=`<div class="empty">Aucun poste à afficher.</div>`;
+      return;
+    }
+
+    const bad=data.filter(r=>nval(r.Niveau)==null);
+    if(bad.length){
+      $("status").textContent=`${data.length} postes reçus`;
+      $("org").innerHTML=`<div class="empty warn">
+        ${bad.length} poste(s) n'ont pas de <b>Niv_organigramme</b> exploitable.
+        Vérifie le mapping « Niveau organigramme ».
+      </div>`;
+      return;
+    }
+
+    const levels=[...new Set(data.map(r=>nval(r.Niveau)))].sort((a,b)=>a-b);
+    const {nodes,roots}=buildGraph(data);
+    const logicalCols=assignX(roots);
+
+    // Si des postes d'un même niveau n'ont pas de relation entre eux,
+    // on garantit néanmoins qu'ils ne se superposent pas.
+    const levelBuckets=new Map();
+    for(const n of nodes.values()){
+      if(!levelBuckets.has(n.level)) levelBuckets.set(n.level,[]);
+      levelBuckets.get(n.level).push(n);
+    }
+    for(const arr of levelBuckets.values()){
+      arr.sort((a,b)=>(a.logicalX-b.logicalX)||((a.order??999999)-(b.order??999999)));
+      for(let i=1;i<arr.length;i++){
+        if(arr[i].logicalX <= arr[i-1].logicalX){
+          arr[i].logicalX = arr[i-1].logicalX + 1;
+        }
+      }
+    }
+
+    const maxX=Math.max(...[...nodes.values()].map(n=>n.logicalX),0);
+    const minLevel=Math.min(...levels);
+    const maxLevel=Math.max(...levels);
+
+    const width=Math.max(700, PAD*2 + (maxX+1)*(NODE_W+X_GAP));
+    const height=PAD*2 + (maxLevel-minLevel+1)*(NODE_H+Y_GAP);
+
+    const org=$("org");
+    org.style.width=width+"px";
+    org.style.height=height+"px";
+    org.innerHTML=`<svg id="lines" width="${width}" height="${height}"></svg>`;
+
+    for(const n of nodes.values()){
+      const x=PAD+n.logicalX*(NODE_W+X_GAP);
+      const y=PAD+(n.level-minLevel)*(NODE_H+Y_GAP);
+      n.x=x; n.y=y;
+
+      const block=nodeHTML(n);
+      const div=document.createElement("div");
+      div.className="node"+(block.enc?" encadrement":"");
+      div.dataset.rowid=n.id;
+      div.style.left=x+"px";
+      div.style.top=y+"px";
+      div.innerHTML=block.html;
+      org.appendChild(div);
+    }
+
+    drawLines(nodes,width,height);
+
+    $("status").textContent=
+      `${data.length} poste${data.length>1?"s":""} • niveaux détectés : ${levels.join(", ")}`;
+  }
+
+  function drawLines(nodes,width,height){
+    const svg=$("lines");
+    if(!svg) return;
+    svg.innerHTML="";
+
+    for(const n of nodes.values()){
+      if(!n.parentId || !nodes.has(n.parentId)) continue;
+      const p=nodes.get(n.parentId);
+
+      const x1=p.x+NODE_W/2;
+      const y1=p.y+NODE_H;
+      const x2=n.x+NODE_W/2;
+      const y2=n.y;
+      const mid=y1+(y2-y1)/2;
+
+      const path=document.createElementNS("http://www.w3.org/2000/svg","path");
+      path.setAttribute("d",`M ${x1} ${y1} V ${mid} H ${x2} V ${y2}`);
+      path.setAttribute("fill","none");
+      path.setAttribute("stroke","#b8bec9");
+      path.setAttribute("stroke-width","1.4");
+      svg.appendChild(path);
+    }
+  }
+
+  function changed(){
+    if(this===$("direction")){
+      const d=$("direction").value;
+      setOptions(
+        $("service"),
+        unique(rows.filter(r=>!d || val(r.Direction)===d).map(r=>val(r.Service))),
+        "Tous"
+      );
+    }
+    render();
+  }
+
+  ["direction","service","mode","detail"].forEach(id=>$(id).addEventListener("change",changed));
+  $("print").addEventListener("click",()=>window.print());
+
+  grist.ready({
+    requiredAccess:"read table",
+    columns:[
+      {name:"Intitule",title:"Intitulé du poste",optional:false},
+      {name:"Parent",title:"Supérieur hiérarchique",type:"Ref",optional:false},
+      {name:"Niveau",title:"Niveau organigramme",optional:false},
+      {name:"Ordre",title:"Ordre organigramme",optional:true},
+      {name:"Direction",title:"Direction",optional:true},
+      {name:"Service",title:"Service (libellé)",optional:true},
+      {name:"Occupant",title:"Occupant / nom complet",optional:true},
+      {name:"Categorie",title:"Catégorie",optional:true},
+      {name:"Statut",title:"Statut du poste",optional:true},
+      {name:"Quotite",title:"Quotité",optional:true},
+      {name:"IDPoste",title:"ID du poste",optional:true},
+      {name:"Encadrement",title:"Poste d'encadrement ?",type:"Bool",optional:true},
+      {name:"Afficher",title:"Afficher dans l'organigramme ?",type:"Bool",optional:true}
+    ]
+  });
+
+  grist.onRecords((data)=>{
+    try{
+      // IMPORTANT : on laisse Grist appliquer directement le mapping configuré
+      // dans le panneau du widget.
+      rows=data.map(r=>{
+        const mapped=grist.mapColumnNames(r) || {};
+        return {...mapped,_rowId:r.id};
+      });
+      refreshFilters();
+      render();
+    }catch(e){
+      console.error(e);
+      $("org").innerHTML=`<div class="empty"><b>Erreur du widget</b><br>${esc(e.message||e)}</div>`;
+    }
+  });
 })();
 </script>
-</body></html>
+</body>
+</html>
