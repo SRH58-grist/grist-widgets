@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Organigramme dynamique — Préfecture — filtres corrigés</title>
+<title>Organigramme dynamique — Préfecture — Grist</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style id="app-style">
   :root{
     --bg:#f3f4f1;
@@ -273,9 +274,6 @@
 </div>
 
 <script>
-const CSV_TEXT = `__CSV_DATA__`;
-</script>
-<script>
 (function(){
   const state = {
     rows: [],
@@ -328,11 +326,7 @@ const CSV_TEXT = `__CSV_DATA__`;
   }
 
   function sameValue(a,b){
-    return cleanText(a).localeCompare(
-      cleanText(b),
-      'fr',
-      {sensitivity:'base'}
-    ) === 0;
+    return cleanText(a).localeCompare(cleanText(b),'fr',{sensitivity:'base'}) === 0;
   }
 
   function cleanRow(row){
@@ -344,9 +338,8 @@ const CSV_TEXT = `__CSV_DATA__`;
     return out;
   }
 
-  function loadData(csvText){
-    const parsed = Papa.parse(csvText, {header:true, skipEmptyLines:true});
-    state.rows = parsed.data
+  function loadRows(rows){
+    state.rows = (rows || [])
       .map(cleanRow)
       .filter(r => cleanText(r['ID_Poste']));
 
@@ -356,35 +349,74 @@ const CSV_TEXT = `__CSV_DATA__`;
     applyFilterAndRender(true);
   }
 
+  function loadData(csvText){
+    const parsed = Papa.parse(csvText, {header:true, skipEmptyLines:true});
+    loadRows(parsed.data);
+  }
+
   function buildHierarchy(){
     state.nodesById = new Map();
+
     const labelToIds = new Map();
+    const rowIdToPostId = new Map();
+
     state.rows.forEach(r=>{
-      const id = r['ID_Poste'].trim();
+      const id = cleanText(r['ID_Poste']);
       state.nodesById.set(id, {id, row:r, childIds:[], parentId:null});
-      const label = (r['Libellé_poste']||'').trim();
+
+      const rowId = Number(r.__rowId);
+      if(Number.isFinite(rowId)) rowIdToPostId.set(rowId, id);
+
+      const label = cleanText(r['Libellé_poste']);
       if(label){
         if(!labelToIds.has(label)) labelToIds.set(label, []);
         labelToIds.get(label).push(id);
       }
     });
+
     state.warnings = [];
     const flaggedAmbiguous = new Set();
+
     state.nodesById.forEach(node=>{
-      const sup = (node.row['Sup_hiérarchique']||'').trim();
+      // Priorité au rowId brut de la Ref Grist.
+      const rawParentRowId = Number(node.row.__parentRowId);
+      if(Number.isFinite(rawParentRowId) && rowIdToPostId.has(rawParentRowId)){
+        const parentId = rowIdToPostId.get(rawParentRowId);
+        if(parentId !== node.id && state.nodesById.has(parentId)){
+          node.parentId = parentId;
+          state.nodesById.get(parentId).childIds.push(node.id);
+          return;
+        }
+      }
+
+      // Repli pour un CSV : rattachement par libellé du supérieur.
+      const sup = cleanText(node.row['Sup_hiérarchique']);
       if(!sup) return;
+
       const candidates = (labelToIds.get(sup)||[]).filter(cid=>cid!==node.id);
+
       if(candidates.length===0){
-        state.warnings.push('Supérieur introuvable « ' + escapeHtml(sup) + ' » pour le poste « ' + escapeHtml(node.row['Libellé_poste']) + ' » (' + escapeHtml(node.id) + '). Ce poste est affiché comme racine.');
+        state.warnings.push(
+          'Supérieur introuvable « ' + escapeHtml(sup) +
+          ' » pour le poste « ' + escapeHtml(node.row['Libellé_poste']) +
+          ' » (' + escapeHtml(node.id) + '). Ce poste est affiché comme racine.'
+        );
         return;
       }
+
       if(candidates.length>1 && !flaggedAmbiguous.has(sup)){
         flaggedAmbiguous.add(sup);
-        state.warnings.push('L’intitulé « ' + escapeHtml(sup) + ' » correspond à ' + candidates.length + ' postes différents : le rattachement a pris le premier trouvé.');
+        state.warnings.push(
+          'L’intitulé « ' + escapeHtml(sup) +
+          ' » correspond à ' + candidates.length +
+          ' postes différents : le rattachement a pris le premier trouvé.'
+        );
       }
+
       node.parentId = candidates[0];
       state.nodesById.get(candidates[0]).childIds.push(node.id);
     });
+
     renderWarnings();
   }
 
@@ -400,7 +432,7 @@ const CSV_TEXT = `__CSV_DATA__`;
   }
 
   function setSelectOptions(select, values, firstLabel){
-    const previous = select.value;
+    const old = select.value;
     select.innerHTML = '';
 
     const first = document.createElement('option');
@@ -415,11 +447,7 @@ const CSV_TEXT = `__CSV_DATA__`;
       select.appendChild(opt);
     });
 
-    if([...select.options].some(o=>o.value === previous)){
-      select.value = previous;
-    } else {
-      select.value = 'all';
-    }
+    select.value = [...select.options].some(o=>o.value===old) ? old : 'all';
   }
 
   function populateDirectionOptions(){
@@ -430,22 +458,19 @@ const CSV_TEXT = `__CSV_DATA__`;
     const sel = document.getElementById('direction-select');
     setSelectOptions(sel, directions, 'Toute la structure');
     state.direction = sel.value || 'all';
-
     populateServiceOptions();
   }
 
   function populateServiceOptions(){
     const sel = document.getElementById('service-select');
 
-    let sourceRows = state.rows;
+    let source = state.rows;
     if(state.direction !== 'all'){
-      sourceRows = sourceRows.filter(
-        r=>sameValue(r['DIRECTION'], state.direction)
-      );
+      source = source.filter(r=>sameValue(r['DIRECTION'], state.direction));
     }
 
     const services = [...new Set(
-      sourceRows.map(r=>cleanText(r['SERVICE'])).filter(Boolean)
+      source.map(r=>cleanText(r['SERVICE'])).filter(Boolean)
     )].sort((a,b)=>a.localeCompare(b,'fr',{numeric:true,sensitivity:'base'}));
 
     setSelectOptions(sel, services, 'Tous les services');
@@ -461,25 +486,16 @@ const CSV_TEXT = `__CSV_DATA__`;
   function getFilteredIds(){
     const matched = new Set();
 
-    // Postes correspondant réellement au filtre choisi.
     state.nodesById.forEach((node,id)=>{
       const r = node.row;
 
-      if(
-        state.direction !== 'all' &&
-        !sameValue(r['DIRECTION'], state.direction)
-      ) return;
-
-      if(
-        state.service !== 'all' &&
-        !sameValue(r['SERVICE'], state.service)
-      ) return;
+      if(state.direction !== 'all' && !sameValue(r['DIRECTION'], state.direction)) return;
+      if(state.service !== 'all' && !sameValue(r['SERVICE'], state.service)) return;
 
       matched.add(id);
     });
 
-    // On conserve les supérieurs hiérarchiques nécessaires
-    // afin de ne pas casser visuellement la branche.
+    // Garder les ancêtres pour conserver les traits hiérarchiques.
     const ids = new Set(matched);
 
     matched.forEach(id=>{
@@ -722,13 +738,9 @@ const CSV_TEXT = `__CSV_DATA__`;
 
   document.getElementById('direction-select').addEventListener('change', function(){
     state.direction = this.value || 'all';
-
     populateServiceOptions();
-
-    // Quand on change de direction, on repart sur "Tous les services".
     state.service = 'all';
     document.getElementById('service-select').value = 'all';
-
     applyFilterAndRender(true);
   });
   document.getElementById('service-select').addEventListener('change', function(){
@@ -830,7 +842,66 @@ const CSV_TEXT = `__CSV_DATA__`;
 
   window.addEventListener('resize', ()=>{ requestAnimationFrame(recenter); });
 
-  loadData(CSV_TEXT);
+  grist.ready({
+    requiredAccess:'read table',
+    columns:[
+      {name:'IDPoste', title:'ID du poste', optional:false},
+      {name:'Libelle', title:'Intitulé du poste', optional:false},
+      {name:'Parent', title:'Supérieur hiérarchique', type:'Ref', optional:false},
+      {name:'Direction', title:'Direction', optional:true},
+      {name:'Service', title:'Service', optional:true},
+      {name:'Encadrement', title:'Poste d’encadrement ?', type:'Bool', optional:true},
+      {name:'Niveau', title:'Niveau organigramme', optional:true},
+      {name:'Categorie', title:'Catégorie', optional:true},
+      {name:'RIFSEEP', title:'RIFSEEP', optional:true},
+      {name:'NBI', title:'NBI', optional:true},
+      {name:'PosteBudgetaire', title:'Poste budgétaire', type:'Bool', optional:true},
+      {name:'StatutPoste', title:'Statut du poste', optional:true}
+    ]
+  });
+
+  grist.onRecords((records, mappings)=>{
+    try{
+      if(!mappings) return;
+
+      const parentMapping = mappings.Parent;
+      const parentColId = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
+
+      const rows = records.map(record=>{
+        const m = grist.mapColumnNames(record, {mappings});
+        if(!m) return null;
+
+        let rawParent = parentColId ? record[parentColId] : null;
+        if(Array.isArray(rawParent)){
+          const nums = rawParent.filter(x=>typeof x==='number');
+          rawParent = nums.length ? nums[nums.length-1] : null;
+        }
+
+        return {
+          'ID_Poste': m.IDPoste,
+          'Libellé_poste': m.Libelle,
+          'Sup_hiérarchique': m.Parent,
+          'DIRECTION': m.Direction,
+          'SERVICE': m.Service,
+          'Poste_encadrement': m.Encadrement,
+          'Niv_organigramme': m.Niveau,
+          'Catégorie': m.Categorie,
+          'RIFSEEP': m.RIFSEEP,
+          'NBI': m.NBI,
+          'Poste budgétaire': m.PosteBudgetaire,
+          'Statut poste': m.StatutPoste,
+          '__rowId': record.id,
+          '__parentRowId': rawParent
+        };
+      }).filter(Boolean);
+
+      loadRows(rows);
+    }catch(err){
+      console.error(err);
+      alert('Erreur de lecture des données Grist : ' + (err && err.message ? err.message : err));
+    }
+  });
+
 })();
 </script>
 </body>
