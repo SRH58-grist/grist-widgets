@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V11 - base V7 réelle</title>
+<title>Organigramme Grist V7</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -52,17 +52,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   #viewport{padding:0;overflow:visible}
   .node{box-shadow:none}
 }
-
-/* Couleurs selon le statut du poste */
-.node.status-renfort{background:#fff3df;border-color:#d59a45}
-.node.status-projet{background:#f4efff;border-color:#9274bd}
-.node.status-apprenti{background:#edf8ef;border-color:#6f9f73}
-.node.status-temporaire{background:#fff0f0;border-color:#bd7474}
-.status-badge{
-  display:inline-block;margin-top:4px;padding:1px 5px;border-radius:999px;
-  font-size:9px;font-weight:700;background:rgba(255,255,255,.75)
-}
-
 </style>
 </head>
 <body>
@@ -75,19 +64,19 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     <label>Service</label>
     <select id="service"></select>
   </div>
-  <div class="field" style="display:none">
+  <div class="field">
     <label>Type</label>
     <select id="mode">
       <option value="fonctionnel">Fonctionnel</option>
-      <option value="nominatif" selected>Nominatif</option>
+      <option value="nominatif">Nominatif</option>
     </select>
   </div>
   <div class="field">
-    <label>Niveau de détail</label>
+    <label>Détails</label>
     <select id="detail">
       <option value="epure">Épuré</option>
-      <option value="standard" selected>Avec occupant</option>
-      <option value="detaille">Complet</option>
+      <option value="standard" selected>Standard</option>
+      <option value="detaille">Détaillé</option>
     </select>
   </div>
   <div class="spacer"></div>
@@ -107,7 +96,6 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   const PAD = 16;
 
   let rows = [];
-  $("mode").value="nominatif";
 
   function val(v){
     if(v == null) return "";
@@ -263,37 +251,35 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     return Math.max(leafCursor,1);
   }
 
-  function statusClass(status){
-    const s=val(status).trim().toLowerCase();
-    if(!s || s==="permanent") return "";
-    if(s.includes("renfort")) return "status-renfort";
-    if(s.includes("contrat de projet") || s.includes("projet")) return "status-projet";
-    if(s.includes("apprenti")) return "status-apprenti";
-    return "status-temporaire";
-  }
-
   function nodeHTML(n){
+    const mode=$("mode").value;
     const detail=$("detail").value;
     const enc=bool(n.Encadrement,false);
 
     let h=`<div class="title">${esc(n.Intitule || "(poste sans intitulé)")}</div>`;
 
-    // Plus de distinction fonctionnel / nominatif :
-    // l'occupant dépend seulement du niveau de détail.
-    if(detail!=="epure" && val(n.Occupant).trim()){
+    if(mode==="nominatif" && val(n.Occupant).trim()){
       h+=`<div class="person">${esc(n.Occupant)}</div>`;
     }
 
-    // On n'affiche plus catégorie, quotité, service, ID poste ni niveau.
-    // Les futurs champs (grade, RIFSEEP, statut de la personne) seront branchés
-    // quand la table Agents sera reliée.
-
-    const statut=val(n.Statut).trim();
-    if(statut && statut.toLowerCase()!=="permanent"){
-      h+=`<span class="status-badge">${esc(statut)}</span>`;
+    if(detail!=="epure"){
+      const bits=[];
+      if(n.Categorie) bits.push(`Cat. ${esc(n.Categorie)}`);
+      if(n.Statut) bits.push(esc(n.Statut));
+      if(n.Quotite) bits.push(esc(n.Quotite));
+      if(bits.length) h+=`<div class="meta">${bits.join(" • ")}</div>`;
     }
 
-    return {html:h,enc,statusClass:statusClass(n.Statut)};
+    if(detail==="detaille"){
+      const bits2=[];
+      if(n.IDPoste) bits2.push(esc(n.IDPoste));
+      if(n.Service) bits2.push(esc(n.Service));
+      if(n.level!=null) bits2.push(`Niv. ${n.level}`);
+      if(bits2.length) h+=`<div class="meta">${bits2.join(" • ")}</div>`;
+      if(enc) h+=`<span class="badge">Encadrement</span>`;
+    }
+
+    return {html:h,enc};
   }
 
   function render(){
@@ -354,7 +340,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
 
       const block=nodeHTML(n);
       const div=document.createElement("div");
-      div.className="node"+(block.enc?" encadrement":"")+(block.statusClass?" "+block.statusClass:"");
+      div.className="node"+(block.enc?" encadrement":"");
       div.dataset.rowid=n.id;
       div.style.left=x+"px";
       div.style.top=y+"px";
@@ -452,6 +438,13 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
         return {...mapped,_rowId:r.id,_parentRowId:rawParent};
       });
 
+      refreshFilters();
+      render();
+    }catch(e){
+      console.error(e);
+      $("org").innerHTML=`<div class="empty"><b>Erreur du widget</b><br>${esc(e.message||e)}</div>`;
+    }
+  });
       refreshFilters();
       render();
     }catch(e){
