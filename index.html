@@ -1,510 +1,746 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Organigramme Grist - Refonte</title>
-<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
-<style>
-:root{
-  --bg:#f6f7fa;
-  --card:#fff;
-  --text:#20242c;
-  --muted:#6b7280;
-  --border:#d9dee7;
-  --line:#7f8793;
-  --accent:#323c79;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
-.toolbar{
-  position:sticky;top:0;z-index:20;
-  display:flex;gap:8px;align-items:end;flex-wrap:wrap;
-  padding:10px 12px;background:#fff;border-bottom:1px solid var(--border)
-}
-.field{display:flex;flex-direction:column;gap:3px}
-.field label{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted)}
-select,button{
-  min-height:34px;border:1px solid var(--border);border-radius:7px;
-  background:#fff;padding:5px 9px;font-size:13px;color:var(--text)
-}
-button{cursor:pointer}
-.spacer{flex:1}
-#status{padding:7px 12px;font-size:12px;color:var(--muted)}
-#viewport{overflow:auto;padding:20px;min-height:calc(100vh - 92px)}
-#org{position:relative;margin:0 auto}
-#lines{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:visible}
-.node{
-  position:absolute;z-index:2;
-  width:170px;min-height:58px;
-  padding:7px 8px;
-  border:1px solid var(--border);border-radius:9px;
-  background:var(--card);
-  box-shadow:0 1px 3px rgba(0,0,0,.06)
-}
-.node.encadrement{border-top:4px solid var(--accent)}
-.title{font-size:11px;font-weight:700;line-height:1.2}
-.person{font-size:10.5px;font-weight:700;margin-top:4px}
-.meta{font-size:9.5px;color:var(--muted);margin-top:4px;line-height:1.3}
-.status-badge{
-  display:inline-block;margin-top:5px;padding:2px 6px;border-radius:999px;
-  font-size:9px;font-weight:700;background:rgba(255,255,255,.72)
-}
-.node.renfort{background:#fff5e8;border-color:#d59a45}
-.node.projet{background:#f5efff;border-color:#9274bd}
-.node.apprenti{background:#eef8ef;border-color:#6f9f73}
-.node.temporaire{background:#fff1f1;border-color:#bd7474}
-.empty{
-  max-width:650px;margin:70px auto;padding:20px;text-align:center;
-  background:#fff;border:1px solid var(--border);border-radius:10px;color:var(--muted)
-}
-@media print{
-  .toolbar,#status{display:none!important}
-  body,#viewport{background:#fff}
-  #viewport{padding:0;overflow:visible}
-  .node{box-shadow:none}
-}
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Organigramme dynamique — Préfecture</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style id="app-style">
+  :root{
+    --bg:#f3f4f1;
+    --paper:#ffffff;
+    --ink:#1c1d1f;
+    --ink-soft:#55565a;
+    --line:#d8d8d2;
+    --primary:#000091;
+    --primary-soft:#e5e5f7;
+    --accent:#a8722b;
+    --cat-a:#1f3a5f;
+    --cat-b:#3f6650;
+    --cat-c:#8c5a2b;
+    --cat-date:#5b3b66;
+    --cat-na:#6b6b66;
+    --status-dot:#c24b3a;
+    --link:#aaaaa2;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    overflow:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  header.app-header{
+    background:var(--paper);
+    border-bottom:1px solid var(--line);
+    padding:14px 20px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px 22px;
+    align-items:center;
+    z-index:20;
+  }
+  .brand{display:flex;flex-direction:column;margin-right:8px;min-width:220px;}
+  .brand .eyebrow{font-size:12px;color:var(--primary);font-weight:600;}
+  .brand h1{font-size:19px;margin:2px 0 0;font-weight:700;letter-spacing:-0.01em;}
+
+  .controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;flex:1;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:11.5px;color:var(--ink-soft);}
+  select, input[type="text"]{
+    font-family:inherit;
+    font-size:13.5px;
+    padding:7px 10px;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:var(--paper);
+    color:var(--ink);
+    min-width:150px;
+  }
+  input[type="range"]{width:150px;}
+  .slider-value{font-size:12px;color:var(--ink-soft);}
+
+  .btn{
+    font-family:inherit;
+    font-size:13px;
+    font-weight:600;
+    padding:7px 13px;
+    border-radius:7px;
+    border:1px solid var(--line);
+    background:var(--paper);
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .btn:hover{border-color:var(--primary);color:var(--primary);}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff;}
+  .btn.primary:hover{opacity:0.92;color:#fff;}
+  .btn-group{display:flex;gap:8px;flex-wrap:wrap;}
+  .file-btn{position:relative;overflow:hidden;}
+  .file-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+
+  #main{position:relative;flex:1;overflow:hidden;}
+  #chart-svg{width:100%;height:100%;display:block;cursor:grab;}
+  #chart-svg:active{cursor:grabbing;}
+
+  .link{fill:none;stroke:var(--link);stroke-width:1.6px;}
+
+  .node-box{
+    height:100%;
+    background:var(--paper);
+    border:1.6px solid var(--line);
+    border-radius:var(--radius);
+    padding:8px 10px 7px;
+    box-shadow:0 1px 2px rgba(0,0,0,0.04);
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:3px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .node-box:hover{border-color:var(--primary);}
+  .node-box.synthetic{
+    border-style:dashed;
+    background:transparent;
+    box-shadow:none;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    cursor:default;
+  }
+  .node-box.synthetic .node-title{color:var(--ink-soft);font-weight:600;}
+  .node-box.non-permanent{border-style:dashed;}
+  .node-box.is-manager{border-left:4px solid var(--accent);}
+
+  .node-top{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+  .badge-cat{
+    font-size:10.5px;
+    font-weight:700;
+    padding:1px 7px;
+    border-radius:20px;
+    color:#fff;
+    letter-spacing:0.02em;
+  }
+  .cat-a .badge-cat{background:var(--cat-a);}
+  .cat-b .badge-cat{background:var(--cat-b);}
+  .cat-c .badge-cat{background:var(--cat-c);}
+  .cat-date .badge-cat{background:var(--cat-date);}
+  .cat-na .badge-cat{background:var(--cat-na);}
+  .badge-manager{font-size:10px;color:var(--accent);font-weight:600;}
+  .node-title{font-size:12.6px;font-weight:600;line-height:1.25;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .node-meta{font-size:10.8px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .node-toggle{font-size:10px;color:var(--primary);font-weight:600;margin-top:1px;}
+
+  .toggle-circle{fill:var(--paper);stroke:var(--primary);stroke-width:1.4px;cursor:pointer;}
+  .toggle-label{font-size:13px;fill:var(--primary);font-weight:700;cursor:pointer;pointer-events:none;}
+
+  .node.highlight .node-box{border-color:var(--status-dot);box-shadow:0 0 0 3px rgba(194,75,58,0.18);}
+
+  #empty-state{
+    position:absolute;inset:0;display:none;
+    align-items:center;justify-content:center;
+    flex-direction:column;gap:6px;color:var(--ink-soft);text-align:center;padding:20px;
+  }
+  #empty-state strong{color:var(--ink);font-size:15px;}
+
+  #warnings{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    max-width:min(640px,90%);
+    background:#fff7ec;border:1px solid #e7c98a;color:#5a4210;
+    border-radius:8px;padding:10px 14px;font-size:12.5px;line-height:1.5;
+    z-index:15;display:none;
+  }
+  #warnings.show{display:block;}
+  #warnings ul{margin:6px 0 0;padding-left:18px;max-height:120px;overflow:auto;}
+  #warnings .dismiss{float:right;cursor:pointer;font-weight:700;color:#5a4210;margin-left:10px;}
+
+  #legend{
+    position:absolute;bottom:14px;left:14px;
+    background:rgba(255,255,255,0.94);
+    border:1px solid var(--line);
+    border-radius:8px;padding:10px 12px;
+    font-size:11px;color:var(--ink-soft);
+    display:flex;flex-direction:column;gap:5px;
+    z-index:10;
+  }
+  #legend .row{display:flex;align-items:center;gap:6px;}
+  #legend .dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
+
+  aside#details-panel{
+    position:absolute;top:0;right:0;bottom:0;width:340px;max-width:88vw;
+    background:var(--paper);border-left:1px solid var(--line);
+    transform:translateX(100%);transition:transform .22s ease;
+    z-index:25;overflow-y:auto;padding:18px 20px 30px;
+  }
+  aside#details-panel.open{transform:translateX(0);}
+  #details-panel .close-btn{
+    background:none;border:none;font-size:20px;color:var(--ink-soft);cursor:pointer;
+    float:right;line-height:1;
+  }
+  #details-panel h2{font-size:16px;margin:20px 0 2px;line-height:1.3;}
+  #details-panel .sub{font-size:12.5px;color:var(--ink-soft);margin-bottom:16px;}
+  .detail-row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;}
+  .detail-row .k{color:var(--ink-soft);}
+  .detail-row .v{font-weight:600;text-align:right;}
+
+  @media (max-width:760px){
+    header.app-header{padding:10px 14px;}
+    .brand{min-width:auto;}
+    aside#details-panel{width:100%;max-width:100%;}
+    #legend{display:none;}
+  }
 </style>
 </head>
 <body>
+<div id="app">
+  <header class="app-header">
+    <div class="brand">
+      <span class="eyebrow">Ressources humaines</span>
+      <h1>Organigramme dynamique</h1>
+    </div>
+    <div class="controls">
+      <div class="field">
+        <label for="direction-select">Direction</label>
+        <select id="direction-select"></select>
+      </div>
+      <div class="field">
+        <label for="service-select">Service</label>
+        <select id="service-select"></select>
+      </div>
+      <div class="field">
+        <label for="depth-slider">Niveau de détail : <span id="depth-value" class="slider-value"></span></label>
+        <input type="range" id="depth-slider" min="1" max="6" value="2">
+      </div>
+      <div class="field">
+        <label for="search-input">Rechercher un poste</label>
+        <input type="text" id="search-input" placeholder="Nom du poste…">
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <div class="btn-group">
+          <button class="btn" id="expand-all">Tout déplier</button>
+          <button class="btn" id="collapse-all">Tout replier</button>
+          <button class="btn" id="recenter">Recentrer</button>
+          <button class="btn" id="export-png">Exporter en image</button>
+          <button class="btn file-btn">Charger un autre CSV
+            <input type="file" id="csv-input" accept=".csv">
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
 
-<div class="toolbar">
-  <div class="field">
-    <label>Direction</label>
-    <select id="direction"></select>
+  <div id="main">
+    <svg id="chart-svg">
+      <g class="zoom-layer">
+        <g class="links-layer"></g>
+        <g class="nodes-layer"></g>
+      </g>
+    </svg>
+
+    <div id="warnings">
+      <span class="dismiss" id="warnings-dismiss">&times;</span>
+      <strong>Données à compléter</strong>
+      <ul id="warnings-list"></ul>
+    </div>
+
+    <div id="legend">
+      <div class="row"><span class="dot" style="background:var(--cat-a)"></span>Catégorie A</div>
+      <div class="row"><span class="dot" style="background:var(--cat-b)"></span>Catégorie B</div>
+      <div class="row"><span class="dot" style="background:var(--cat-c)"></span>Catégorie C</div>
+      <div class="row"><span class="dot" style="background:var(--cat-date)"></span>Emploi DATE</div>
+      <div class="row"><span style="width:10px;height:10px;border-left:3px solid var(--accent);display:inline-block"></span>Poste d'encadrement</div>
+      <div class="row"><span style="width:10px;height:10px;border:1.4px dashed var(--ink-soft);display:inline-block;border-radius:3px"></span>Poste non permanent</div>
+    </div>
+
+    <div id="empty-state">
+      <strong>Aucun poste à afficher</strong>
+      <span>Modifiez les filtres Direction / Service pour voir l'organigramme.</span>
+    </div>
+
+    <aside id="details-panel">
+      <button class="close-btn" id="close-details">&times;</button>
+      <div id="details-content"></div>
+    </aside>
   </div>
-  <div class="field">
-    <label>Service</label>
-    <select id="service"></select>
-  </div>
-  <div class="field">
-    <label>Niveau de détail</label>
-    <select id="detail">
-      <option value="epure">Épuré</option>
-      <option value="occupant" selected>Avec occupant</option>
-      <option value="complet">Complet</option>
-    </select>
-  </div>
-  <div class="spacer"></div>
-  <button id="print">Imprimer / PDF</button>
 </div>
 
-<div id="status">En attente des données Grist…</div>
-<div id="viewport"><div id="org"></div></div>
-
 <script>
-(() => {
-  "use strict";
+const CSV_TEXT = `__CSV_DATA__`;
+</script>
+<script>
+(function(){
+  const state = {
+    rows: [],
+    nodesById: new Map(),
+    warnings: [],
+    direction: 'all',
+    service: 'all',
+    maxVisibleDepth: 2,
+    root: null,
+    maxDepthFound: 6
+  };
 
-  const $ = (id) => document.getElementById(id);
+  const NODE_W = 226, NODE_H = 84;
+  const H_GAP = 34, V_GAP = 64;
 
-  const NODE_W = 170;
-  const NODE_H = 66;
-  const X_GAP = 20;
-  const Y_GAP = 48;
-  const PAD = 18;
+  const svg = d3.select('#chart-svg');
+  const zoomLayer = svg.select('.zoom-layer');
+  const gLinks = zoomLayer.select('.links-layer');
+  const gNodes = zoomLayer.select('.nodes-layer');
 
-  let allRows = [];
+  const zoomBehavior = d3.zoom().scaleExtent([0.15, 2.2]).on('zoom', (event)=>{
+    zoomLayer.attr('transform', event.transform);
+  });
+  svg.call(zoomBehavior).on('dblclick.zoom', null);
 
-  function text(v){
-    if(v === null || v === undefined) return "";
-    if(Array.isArray(v)) return v.filter(x => typeof x === "string").join(", ");
-    return String(v);
+  const treeLayout = d3.tree().nodeSize([NODE_W + H_GAP, NODE_H + V_GAP]);
+
+  function escapeHtml(str){
+    return String(str==null? '' : str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
   }
 
-  function escapeHtml(v){
-    return text(v).replace(/[&<>"']/g, ch => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    })[ch]);
+  function boolTrue(v){ return String(v||'').trim().toLowerCase() === 'true'; }
+
+  function catClass(cat){
+    const c = String(cat||'').trim().toUpperCase();
+    if(c==='A') return 'cat-a';
+    if(c==='B') return 'cat-b';
+    if(c==='C') return 'cat-c';
+    if(c==='DATE') return 'cat-date';
+    return 'cat-na';
   }
 
-  function numberOrNull(v){
-    if(v === null || v === undefined || v === "") return null;
-    if(typeof v === "number" && Number.isFinite(v)) return v;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+  function loadData(csvText){
+    const parsed = Papa.parse(csvText, {header:true, skipEmptyLines:true});
+    state.rows = parsed.data.filter(r => r['ID_Poste'] && r['ID_Poste'].trim());
+    buildHierarchy();
+    populateDirectionOptions();
+    document.getElementById('search-input').value = '';
+    applyFilterAndRender(true);
   }
 
-  function bool(v){
-    if(typeof v === "boolean") return v;
-    if(typeof v === "number") return v !== 0;
-    return ["true","oui","yes","1","x"].includes(text(v).toLowerCase());
-  }
-
-  function getRawRefId(raw){
-    if(raw === null || raw === undefined || raw === "") return null;
-    if(typeof raw === "number") return raw;
-    if(Array.isArray(raw)){
-      const nums = raw.filter(x => typeof x === "number");
-      return nums.length ? nums[nums.length - 1] : null;
-    }
-    if(typeof raw === "object" && raw.id !== undefined){
-      const n = Number(raw.id);
-      return Number.isFinite(n) ? n : null;
-    }
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function uniqueSorted(values){
-    return [...new Set(values.map(text).filter(Boolean))]
-      .sort((a,b) => a.localeCompare(b,"fr",{numeric:true}));
-  }
-
-  function fillSelect(select, values, allLabel){
-    const old = select.value;
-    select.innerHTML = "";
-
-    const first = document.createElement("option");
-    first.value = "";
-    first.textContent = allLabel;
-    select.appendChild(first);
-
-    for(const value of values){
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value;
-      select.appendChild(opt);
-    }
-
-    if([...select.options].some(o => o.value === old)){
-      select.value = old;
-    }
-  }
-
-  function refreshFilters(){
-    fillSelect(
-      $("direction"),
-      uniqueSorted(allRows.map(r => r.Direction)),
-      "Toutes"
-    );
-
-    const direction = $("direction").value;
-    fillSelect(
-      $("service"),
-      uniqueSorted(
-        allRows
-          .filter(r => !direction || text(r.Direction) === direction)
-          .map(r => r.Service)
-      ),
-      "Tous"
-    );
-  }
-
-  function filteredRows(){
-    const direction = $("direction").value;
-    const service = $("service").value;
-    const byId = new Map(allRows.map(r => [r.rowId, r]));
-
-    const selected = allRows.filter(r => {
-      if(direction && text(r.Direction) !== direction) return false;
-      if(service && text(r.Service) !== service) return false;
-      return true;
-    });
-
-    // Conserver les ancêtres nécessaires pour que les branches restent reliées.
-    const keep = new Map(selected.map(r => [r.rowId, r]));
-
-    for(const row of selected){
-      let pid = row.parentId;
-      let guard = 0;
-
-      while(pid && byId.has(pid) && guard++ < 100){
-        const parent = byId.get(pid);
-        keep.set(parent.rowId, parent);
-        pid = parent.parentId;
+  function buildHierarchy(){
+    state.nodesById = new Map();
+    const labelToIds = new Map();
+    state.rows.forEach(r=>{
+      const id = r['ID_Poste'].trim();
+      state.nodesById.set(id, {id, row:r, childIds:[], parentId:null});
+      const label = (r['Libellé_poste']||'').trim();
+      if(label){
+        if(!labelToIds.has(label)) labelToIds.set(label, []);
+        labelToIds.get(label).push(id);
       }
-    }
-
-    return [...keep.values()];
+    });
+    state.warnings = [];
+    const flaggedAmbiguous = new Set();
+    state.nodesById.forEach(node=>{
+      const sup = (node.row['Sup_hiérarchique']||'').trim();
+      if(!sup) return;
+      const candidates = (labelToIds.get(sup)||[]).filter(cid=>cid!==node.id);
+      if(candidates.length===0){
+        state.warnings.push('Supérieur introuvable « ' + escapeHtml(sup) + ' » pour le poste « ' + escapeHtml(node.row['Libellé_poste']) + ' » (' + escapeHtml(node.id) + '). Ce poste est affiché comme racine.');
+        return;
+      }
+      if(candidates.length>1 && !flaggedAmbiguous.has(sup)){
+        flaggedAmbiguous.add(sup);
+        state.warnings.push('L’intitulé « ' + escapeHtml(sup) + ' » correspond à ' + candidates.length + ' postes différents : le rattachement a pris le premier trouvé.');
+      }
+      node.parentId = candidates[0];
+      state.nodesById.get(candidates[0]).childIds.push(node.id);
+    });
+    renderWarnings();
   }
 
-  function makeGraph(rows){
-    const nodes = new Map();
+  function renderWarnings(){
+    const box = document.getElementById('warnings');
+    const list = document.getElementById('warnings-list');
+    if(state.warnings.length===0){ box.classList.remove('show'); list.innerHTML=''; return; }
+    list.innerHTML = state.warnings.slice(0,12).map(w=>'<li>'+w+'</li>').join('');
+    if(state.warnings.length>12){
+      list.innerHTML += '<li>… et ' + (state.warnings.length-12) + ' autre(s) alerte(s).</li>';
+    }
+    box.classList.add('show');
+  }
 
-    for(const row of rows){
-      nodes.set(row.rowId, {
-        ...row,
-        children:[],
-        logicalX:null,
-        x:0,
-        y:0
+  function populateDirectionOptions(){
+    const directions = [...new Set(state.rows.map(r=>r['DIRECTION']).filter(Boolean))];
+    const sel = document.getElementById('direction-select');
+    sel.innerHTML = '<option value="all">Toute la structure</option>' +
+      directions.map(d=>'<option value="'+escapeHtml(d)+'">'+escapeHtml(d)+'</option>').join('');
+    state.direction = 'all';
+    populateServiceOptions();
+  }
+
+  function populateServiceOptions(){
+    const sel = document.getElementById('service-select');
+    let services;
+    if(state.direction==='all'){
+      services = [...new Set(state.rows.map(r=>r['SERVICE']).filter(Boolean))];
+    } else {
+      services = [...new Set(state.rows.filter(r=>r['DIRECTION']===state.direction).map(r=>r['SERVICE']).filter(Boolean))];
+    }
+    sel.innerHTML = '<option value="all">Tous les services</option>' +
+      services.map(s=>'<option value="'+escapeHtml(s)+'">'+escapeHtml(s)+'</option>').join('');
+    state.service = 'all';
+  }
+
+  function filterLabel(){
+    if(state.direction==='all') return 'Ensemble de la structure';
+    if(state.service==='all') return state.direction;
+    return state.direction + ' — ' + state.service;
+  }
+
+  function getFilteredIds(){
+    const ids = new Set();
+    state.nodesById.forEach((node,id)=>{
+      const r = node.row;
+      if(state.direction!=='all' && r['DIRECTION']!==state.direction) return;
+      if(state.service!=='all' && r['SERVICE']!==state.service) return;
+      ids.add(id);
+    });
+    return ids;
+  }
+
+  function buildDisplayTree(){
+    const ids = getFilteredIds();
+    if(ids.size===0) return null;
+    const rootIds = [...ids].filter(id=>{
+      const p = state.nodesById.get(id).parentId;
+      return !p || !ids.has(p);
+    });
+    function toDatum(id, visited){
+      if(visited.has(id)) return null;
+      visited.add(id);
+      const node = state.nodesById.get(id);
+      const children = node.childIds
+        .filter(cid=>ids.has(cid))
+        .map(cid=>toDatum(cid, visited))
+        .filter(Boolean);
+      return {id: node.id, row: node.row, children: children.length? children : undefined};
+    }
+    if(rootIds.length===1){
+      return toDatum(rootIds[0], new Set());
+    }
+    return {
+      id: '__synthetic_root__',
+      synthetic: true,
+      row: {'Libellé_poste': filterLabel()},
+      children: rootIds.map(id=>toDatum(id, new Set())).filter(Boolean)
+    };
+  }
+
+  function computeMaxDepth(datum){
+    let max = 0;
+    (function walk(d, depth){
+      max = Math.max(max, depth);
+      (d.children||[]).forEach(c=>walk(c, depth+1));
+    })(datum, 0);
+    return max;
+  }
+
+  function applyFilterAndRender(resetCollapse){
+    const datum = buildDisplayTree();
+    const empty = document.getElementById('empty-state');
+    if(!datum){
+      empty.style.display = 'flex';
+      gLinks.selectAll('*').remove();
+      gNodes.selectAll('*').remove();
+      return;
+    }
+    empty.style.display = 'none';
+    state.maxDepthFound = Math.max(1, computeMaxDepth(datum));
+    const slider = document.getElementById('depth-slider');
+    slider.max = state.maxDepthFound;
+    if(Number(slider.value) > state.maxDepthFound) slider.value = state.maxDepthFound;
+    state.maxVisibleDepth = Number(slider.value);
+    document.getElementById('depth-value').textContent = state.maxVisibleDepth + ' / ' + state.maxDepthFound;
+
+    render(datum, resetCollapse);
+    requestAnimationFrame(recenter);
+  }
+
+  function render(datum, resetCollapse){
+    const rootH = d3.hierarchy(datum, d=>d.children);
+    rootH.each(d=>{ d.id = d.data.id; });
+    if(resetCollapse){
+      rootH.each(d=>{
+        if(d.depth >= state.maxVisibleDepth && d.children){
+          d._children = d.children;
+          d.children = null;
+        }
+      });
+    } else if(state.root){
+      const prevCollapsed = new Set();
+      state.root.each(d=>{ if(d._children) prevCollapsed.add(d.id); });
+      rootH.each(d=>{
+        if(prevCollapsed.has(d.id) && d.children){
+          d._children = d.children;
+          d.children = null;
+        }
       });
     }
-
-    const roots = [];
-
-    for(const node of nodes.values()){
-      if(node.parentId && node.parentId !== node.rowId && nodes.has(node.parentId)){
-        nodes.get(node.parentId).children.push(node);
-      }else{
-        roots.push(node);
-      }
-    }
-
-    const sortNodes = (a,b) =>
-      text(a.Intitule).localeCompare(text(b.Intitule),"fr",{numeric:true});
-
-    for(const node of nodes.values()) node.children.sort(sortNodes);
-    roots.sort(sortNodes);
-
-    return {nodes, roots};
+    state.root = rootH;
+    update();
   }
 
-  function assignHorizontalPositions(roots){
-    let cursor = 0;
-
-    function walk(node){
-      if(node.children.length === 0){
-        node.logicalX = cursor++;
-        return node.logicalX;
-      }
-
-      const xs = node.children.map(walk);
-      node.logicalX = (Math.min(...xs) + Math.max(...xs)) / 2;
-      return node.logicalX;
-    }
-
-    for(const root of roots){
-      walk(root);
-      cursor += 1;
-    }
+  function countDirect(d){
+    return (d.children? d.children.length : 0) + (d._children? d._children.length : 0);
   }
 
-  function preventSameLevelOverlap(nodes){
-    const buckets = new Map();
-
-    for(const node of nodes.values()){
-      if(!buckets.has(node.level)) buckets.set(node.level,[]);
-      buckets.get(node.level).push(node);
+  function nodeHTML(d){
+    const r = d.data.row;
+    if(d.data.synthetic){
+      return '<div class="node-box synthetic"><div class="node-title">'+escapeHtml(r['Libellé_poste'])+'</div></div>';
     }
-
-    for(const bucket of buckets.values()){
-      bucket.sort((a,b) =>
-        (a.logicalX - b.logicalX) ||
-        text(a.Intitule).localeCompare(text(b.Intitule),"fr")
-      );
-
-      for(let i=1; i<bucket.length; i++){
-        if(bucket[i].logicalX <= bucket[i-1].logicalX){
-          bucket[i].logicalX = bucket[i-1].logicalX + 1;
-        }
-      }
-    }
+    const enc = boolTrue(r['Poste_encadrement']);
+    const statut = (r['Statut poste']||'').trim();
+    const cat = (r['Catégorie']||'').trim();
+    const nonPerm = statut && statut.toLowerCase()!=='permanent';
+    const direct = countDirect(d);
+    return '<div class="node-box '+catClass(cat)+(enc?' is-manager':'')+(nonPerm?' non-permanent':'')+'">' +
+      '<div class="node-top"><span class="badge-cat">'+escapeHtml(cat||'—')+'</span>' +
+      (enc? '<span class="badge-manager">Encadrement</span>':'') + '</div>' +
+      '<div class="node-title">'+escapeHtml(r['Libellé_poste']||'')+'</div>' +
+      '<div class="node-meta">'+escapeHtml(r['SERVICE']||'')+(nonPerm? ' · '+escapeHtml(statut):'')+'</div>' +
+      (direct>0? '<div class="node-toggle">'+direct+' rattaché'+(direct>1?'s':'')+'</div>' : '') +
+      '</div>';
   }
 
-  function statusClass(status){
-    const s = text(status).trim().toLowerCase();
+  function update(){
+    const nodes = state.root.descendants();
+    const links = state.root.links();
+    treeLayout(state.root);
 
-    if(!s || s === "permanent" || s === "pérenne" || s === "perenne"){
-      return "";
-    }
-    if(s.includes("renfort")) return "renfort";
-    if(s.includes("projet")) return "projet";
-    if(s.includes("apprenti")) return "apprenti";
-    return "temporaire";
+    const linkGen = d3.linkVertical().x(d=>d.x).y(d=>d.y);
+
+    const link = gLinks.selectAll('path.link').data(links, d=>d.target.id);
+    link.exit().remove();
+    link.enter().append('path').attr('class','link')
+      .merge(link)
+      .transition().duration(260)
+      .attr('d', linkGen);
+
+    const node = gNodes.selectAll('g.node').data(nodes, d=>d.id);
+    node.exit().remove();
+
+    const nodeEnter = node.enter().append('g')
+      .attr('class','node')
+      .attr('transform', d=>'translate('+d.x+','+d.y+')')
+      .attr('tabindex', 0);
+
+    nodeEnter.append('foreignObject')
+      .attr('x', -NODE_W/2).attr('y', -NODE_H/2)
+      .attr('width', NODE_W).attr('height', NODE_H)
+      .append('xhtml:div')
+      .attr('xmlns','http://www.w3.org/1999/xhtml')
+      .on('click', function(event, d){ openDetails(d); });
+
+    nodeEnter.append('circle')
+      .attr('class','toggle-circle')
+      .attr('cy', NODE_H/2)
+      .attr('r', 10)
+      .on('click', function(event, d){ event.stopPropagation(); toggleNode(d); });
+
+    nodeEnter.append('text')
+      .attr('class','toggle-label')
+      .attr('y', NODE_H/2 + 4)
+      .attr('text-anchor','middle')
+      .on('click', function(event, d){ event.stopPropagation(); toggleNode(d); });
+
+    const merged = nodeEnter.merge(node);
+
+    merged.transition().duration(260)
+      .attr('transform', d=>'translate('+d.x+','+d.y+')');
+
+    merged.select('foreignObject > div')
+      .html(d=>nodeHTML(d));
+
+    merged.select('circle.toggle-circle')
+      .style('display', d=> (d.children||d._children) ? null : 'none');
+
+    merged.select('text.toggle-label')
+      .style('display', d=> (d.children||d._children) ? null : 'none')
+      .text(d=> d.children? '–' : '+');
+
+    merged.classed('highlight', d=> d.__highlight === true);
   }
 
-  function cardContent(node){
-    const detail = $("detail").value;
-    const status = text(node.StatutPoste).trim();
-
-    let html = `<div class="title">${escapeHtml(node.Intitule || "(poste sans intitulé)")}</div>`;
-
-    if(detail !== "epure" && text(node.Occupant).trim()){
-      html += `<div class="person">${escapeHtml(node.Occupant)}</div>`;
-    }
-
-    if(detail === "complet"){
-      const bits = [];
-      if(text(node.Categorie).trim()) bits.push(`Cat. ${escapeHtml(node.Categorie)}`);
-      if(text(node.RIFSEEP).trim()) bits.push(`RIFSEEP ${escapeHtml(node.RIFSEEP)}`);
-      if(bits.length){
-        html += `<div class="meta">${bits.join(" • ")}</div>`;
-      }
-    }
-
-    // Le statut non permanent ressort quel que soit le niveau de détail.
-    if(status && status.toLowerCase() !== "permanent"){
-      html += `<span class="status-badge">${escapeHtml(status)}</span>`;
-    }
-
-    return html;
+  function toggleNode(d){
+    if(d.children){ d._children = d.children; d.children = null; }
+    else if(d._children){ d.children = d._children; d._children = null; }
+    update();
   }
 
-  function drawConnections(nodes){
-    const svg = $("lines");
-    svg.innerHTML = "";
-
-    for(const node of nodes.values()){
-      if(!node.parentId || !nodes.has(node.parentId)) continue;
-
-      const parent = nodes.get(node.parentId);
-
-      const x1 = parent.x + NODE_W / 2;
-      const y1 = parent.y + NODE_H;
-      const x2 = node.x + NODE_W / 2;
-      const y2 = node.y;
-      const mid = y1 + (y2 - y1) / 2;
-
-      const path = document.createElementNS("http://www.w3.org/2000/svg","path");
-      path.setAttribute("d", `M ${x1} ${y1} V ${mid} H ${x2} V ${y2}`);
-      path.setAttribute("fill", "none");
-      path.setAttribute("stroke", "#7f8793");
-      path.setAttribute("stroke-width", "2");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-      svg.appendChild(path);
-    }
+  function collapseAllExceptRoot(){
+    state.root.each(d=>{
+      if(d.depth>=1 && d.children){ d._children = d.children; d.children = null; }
+    });
+    update();
   }
 
-  function render(){
-    const rows = filteredRows();
-
-    if(rows.length === 0){
-      $("status").textContent = "0 poste affiché";
-      $("org").innerHTML = `<div class="empty">Aucun poste à afficher.</div>`;
-      return;
-    }
-
-    const invalidLevel = rows.filter(r => r.level === null);
-    if(invalidLevel.length){
-      $("status").textContent = `${rows.length} postes reçus`;
-      $("org").innerHTML =
-        `<div class="empty">${invalidLevel.length} poste(s) n'ont pas de niveau d'organigramme exploitable.</div>`;
-      return;
-    }
-
-    const {nodes, roots} = makeGraph(rows);
-    assignHorizontalPositions(roots);
-    preventSameLevelOverlap(nodes);
-
-    const levels = [...new Set([...nodes.values()].map(n => n.level))].sort((a,b)=>a-b);
-    const minLevel = Math.min(...levels);
-    const maxLevel = Math.max(...levels);
-    const maxLogicalX = Math.max(...[...nodes.values()].map(n => n.logicalX), 0);
-
-    const width = Math.max(700, PAD*2 + (maxLogicalX+1)*(NODE_W+X_GAP));
-    const height = PAD*2 + (maxLevel-minLevel+1)*(NODE_H+Y_GAP);
-
-    const org = $("org");
-    org.style.width = width + "px";
-    org.style.height = height + "px";
-    org.innerHTML = `<svg id="lines" width="${width}" height="${height}"></svg>`;
-
-    for(const node of nodes.values()){
-      node.x = PAD + node.logicalX * (NODE_W + X_GAP);
-      node.y = PAD + (node.level - minLevel) * (NODE_H + Y_GAP);
-
-      const div = document.createElement("div");
-      div.className =
-        "node" +
-        (bool(node.Encadrement) ? " encadrement" : "") +
-        (statusClass(node.StatutPoste) ? " " + statusClass(node.StatutPoste) : "");
-
-      div.style.left = node.x + "px";
-      div.style.top = node.y + "px";
-      div.dataset.rowid = node.rowId;
-      div.innerHTML = cardContent(node);
-      org.appendChild(div);
-    }
-
-    drawConnections(nodes);
-
-    const links = [...nodes.values()].filter(
-      n => n.parentId && nodes.has(n.parentId) && n.parentId !== n.rowId
-    ).length;
-
-    $("status").textContent =
-      `${nodes.size} poste${nodes.size>1?"s":""} • ${links} lien${links>1?"s":""} hiérarchique${links>1?"s":""} • niveaux ${levels.join(", ")}`;
+  function expandAll(){
+    state.root.each(d=>{
+      if(d._children){ d.children = d._children; d._children = null; }
+    });
+    update();
   }
 
-  $("direction").addEventListener("change", () => {
-    const direction = $("direction").value;
+  function recenter(){
+    const bbox = gNodes.node().getBBox();
+    if(!bbox.width || !bbox.height) return;
+    const svgNode = svg.node();
+    const w = svgNode.clientWidth, h = svgNode.clientHeight;
+    const pad = 60;
+    const scale = Math.max(0.18, Math.min(1.05, Math.min((w-pad)/bbox.width, (h-pad)/bbox.height)));
+    const tx = w/2 - scale*(bbox.x + bbox.width/2);
+    const ty = pad/1.5 - scale*bbox.y;
+    svg.transition().duration(300).call(zoomBehavior.transform, d3.zoomIdentity.translate(tx,ty).scale(scale));
+  }
 
-    fillSelect(
-      $("service"),
-      uniqueSorted(
-        allRows
-          .filter(r => !direction || text(r.Direction) === direction)
-          .map(r => r.Service)
-      ),
-      "Tous"
-    );
+  function openDetails(d){
+    if(d.data.synthetic) return;
+    const r = d.data.row;
+    const panel = document.getElementById('details-panel');
+    const content = document.getElementById('details-content');
+    const rows = [
+      ['Direction', r['DIRECTION']],
+      ['Service', r['SERVICE']],
+      ['Identifiant', r['ID_Poste']],
+      ['Supérieur hiérarchique', r['Sup_hiérarchique'] || '—'],
+      ['Poste d’encadrement', boolTrue(r['Poste_encadrement']) ? 'Oui' : 'Non'],
+      ['Niveau organigramme', r['Niv_organigramme'] || '—'],
+      ['Catégorie', r['Catégorie'] || '—'],
+      ['RIFSEEP', r['RIFSEEP'] || '—'],
+      ['NBI', r['NBI'] || '—'],
+      ['Poste budgétaire', boolTrue(r['Poste budgétaire']) ? 'Oui' : 'Non'],
+      ['Statut du poste', r['Statut poste'] || '—'],
+      ['Postes rattachés', countDirect(d)]
+    ];
+    content.innerHTML = '<h2>'+escapeHtml(r['Libellé_poste'])+'</h2>' +
+      '<div class="sub">'+escapeHtml(r['ID_Poste'])+'</div>' +
+      rows.map(([k,v])=>'<div class="detail-row"><span class="k">'+escapeHtml(k)+'</span><span class="v">'+escapeHtml(v)+'</span></div>').join('');
+    panel.classList.add('open');
+  }
 
-    render();
+  document.getElementById('close-details').addEventListener('click', ()=>{
+    document.getElementById('details-panel').classList.remove('open');
   });
 
-  $("service").addEventListener("change", render);
-  $("detail").addEventListener("change", render);
-  $("print").addEventListener("click", () => window.print());
-
-  // Déclaration minimale et explicite des colonnes attendues.
-  grist.ready({
-    requiredAccess:"read table",
-    columns:[
-      {name:"Intitule", title:"Intitulé du poste", optional:false},
-      {name:"Parent", title:"Supérieur hiérarchique", type:"Ref", optional:false},
-      {name:"Niveau", title:"Niveau organigramme", optional:false},
-      {name:"Direction", title:"Direction", optional:true},
-      {name:"Service", title:"Service", optional:true},
-      {name:"Occupant", title:"Occupant", optional:true},
-      {name:"Categorie", title:"Catégorie", optional:true},
-      {name:"RIFSEEP", title:"Groupe RIFSEEP", optional:true},
-      {name:"StatutPoste", title:"Statut du poste", optional:true},
-      {name:"Encadrement", title:"Poste d'encadrement ?", type:"Bool", optional:true}
-    ]
+  document.getElementById('direction-select').addEventListener('change', function(){
+    state.direction = this.value;
+    populateServiceOptions();
+    applyFilterAndRender(true);
+  });
+  document.getElementById('service-select').addEventListener('change', function(){
+    state.service = this.value;
+    applyFilterAndRender(true);
+  });
+  document.getElementById('depth-slider').addEventListener('input', function(){
+    state.maxVisibleDepth = Number(this.value);
+    document.getElementById('depth-value').textContent = state.maxVisibleDepth + ' / ' + state.maxDepthFound;
+    render(buildDisplayTree(), true);
+    requestAnimationFrame(recenter);
+  });
+  document.getElementById('expand-all').addEventListener('click', expandAll);
+  document.getElementById('collapse-all').addEventListener('click', collapseAllExceptRoot);
+  document.getElementById('recenter').addEventListener('click', recenter);
+  document.getElementById('warnings-dismiss').addEventListener('click', ()=>{
+    document.getElementById('warnings').classList.remove('show');
   });
 
-  grist.onRecords((records, mappings) => {
+  document.getElementById('csv-input').addEventListener('change', function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(evt){ loadData(evt.target.result); };
+    reader.readAsText(file, 'UTF-8');
+  });
+
+  document.getElementById('search-input').addEventListener('keydown', function(e){
+    if(e.key!=='Enter') return;
+    const term = this.value.trim().toLowerCase();
+    if(!term) return;
+    let found = null;
+    state.root.each(d=>{
+      if(!found && !d.data.synthetic && (d.data.row['Libellé_poste']||'').toLowerCase().includes(term)){
+        found = d;
+      }
+    });
+    state.root.each(d=>{ d.__highlight = false; });
+    if(!found){
+      alert('Aucun poste trouvé dans la vue actuelle pour « ' + this.value + ' ». Essayez avec un autre filtre Direction/Service.');
+      return;
+    }
+    let p = found.parent;
+    while(p){ if(p._children){ p.children = p._children; p._children = null; } p = p.parent; }
+    found.__highlight = true;
+    update();
+    requestAnimationFrame(()=>{
+      const svgNode = svg.node();
+      const w = svgNode.clientWidth, h = svgNode.clientHeight;
+      const scale = 0.85;
+      const tx = w/2 - scale*found.x;
+      const ty = h/2 - scale*found.y;
+      svg.transition().duration(320).call(zoomBehavior.transform, d3.zoomIdentity.translate(tx,ty).scale(scale));
+      setTimeout(()=>{ found.__highlight=false; update(); }, 2600);
+    });
+  });
+
+  document.getElementById('export-png').addEventListener('click', function(){
     try{
-      if(!mappings){
-        $("status").textContent = "Configure les colonnes du widget dans Grist.";
-        return;
-      }
-
-      const mappedRows = [];
-      const parentMapping = mappings.Parent;
-      const parentColId = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
-
-      for(const record of records){
-        const mapped = grist.mapColumnNames(record, {mappings});
-
-        // mapColumnNames renvoie null tant que les colonnes obligatoires
-        // ne sont pas toutes configurées.
-        if(!mapped) continue;
-
-        const rawParent = parentColId ? record[parentColId] : null;
-
-        mappedRows.push({
-          ...mapped,
-          rowId:Number(record.id),
-          parentId:getRawRefId(rawParent),
-          level:numberOrNull(mapped.Niveau)
+      const svgNode = document.getElementById('chart-svg');
+      const clone = svgNode.cloneNode(true);
+      clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      const w = svgNode.clientWidth, h = svgNode.clientHeight;
+      clone.setAttribute('width', w);
+      clone.setAttribute('height', h);
+      const styleEl = document.createElementNS('http://www.w3.org/2000/svg','style');
+      styleEl.textContent = document.getElementById('app-style').textContent;
+      clone.insertBefore(styleEl, clone.firstChild);
+      const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      bg.setAttribute('x',0); bg.setAttribute('y',0);
+      bg.setAttribute('width',w); bg.setAttribute('height',h);
+      bg.setAttribute('fill','#f3f4f1');
+      clone.insertBefore(bg, clone.firstChild.nextSibling);
+      const svgString = new XMLSerializer().serializeToString(clone);
+      const blob = new Blob([svgString], {type:'image/svg+xml;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = function(){
+        const scaleFactor = 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = w*scaleFactor; canvas.height = h*scaleFactor;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scaleFactor, scaleFactor);
+        ctx.drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(function(blob2){
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob2);
+          a.download = 'organigramme.png';
+          a.click();
         });
-      }
-
-      allRows = mappedRows;
-
-      if(allRows.length === 0){
-        $("status").textContent =
-          "Aucune donnée exploitable : vérifie les trois champs obligatoires.";
-        $("org").innerHTML =
-          `<div class="empty">Mappe au minimum : Intitulé du poste, Supérieur hiérarchique et Niveau organigramme.</div>`;
-        return;
-      }
-
-      refreshFilters();
-      render();
-
+      };
+      img.onerror = function(){ alert('L’export a échoué dans ce navigateur. Une capture d’écran reste possible en solution de repli.'); };
+      img.src = url;
     }catch(err){
-      console.error(err);
-      $("status").textContent = "Erreur du widget";
-      $("org").innerHTML =
-        `<div class="empty"><b>Erreur :</b><br>${escapeHtml(err && err.message ? err.message : err)}</div>`;
+      alert('L’export a échoué dans ce navigateur. Une capture d’écran reste possible en solution de repli.');
     }
   });
 
+  window.addEventListener('resize', ()=>{ requestAnimationFrame(recenter); });
+
+  loadData(CSV_TEXT);
 })();
 </script>
 </body>
