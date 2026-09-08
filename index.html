@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organigramme Grist V10-stable</title>
+<title>Organigramme Grist V11 - base V7 réelle</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <style>
 :root{
@@ -53,14 +53,14 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   .node{box-shadow:none}
 }
 
-/* Couleurs des postes - n'affecte pas la hiérarchie */
-.node.renfort{background:#fff5e8;border-color:#d69a45}
-.node.contrat{background:#f5efff;border-color:#9274bd}
-.node.apprenti{background:#eef8ef;border-color:#6e9f73}
-.node.temporaire{background:#fff1f1;border-color:#bd7474}
-.post-status{
-  display:inline-block;margin-top:4px;padding:1px 5px;border-radius:99px;
-  font-size:9px;font-weight:700;background:rgba(255,255,255,.72)
+/* Couleurs selon le statut du poste */
+.node.status-renfort{background:#fff3df;border-color:#d59a45}
+.node.status-projet{background:#f4efff;border-color:#9274bd}
+.node.status-apprenti{background:#edf8ef;border-color:#6f9f73}
+.node.status-temporaire{background:#fff0f0;border-color:#bd7474}
+.status-badge{
+  display:inline-block;margin-top:4px;padding:1px 5px;border-radius:999px;
+  font-size:9px;font-weight:700;background:rgba(255,255,255,.75)
 }
 
 </style>
@@ -75,10 +75,11 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     <label>Service</label>
     <select id="service"></select>
   </div>
-  <div class="field" style="display:none"><label>Type</label>
+  <div class="field" style="display:none">
+    <label>Type</label>
     <select id="mode">
       <option value="fonctionnel">Fonctionnel</option>
-      <option value="nominatif">Nominatif</option>
+      <option value="nominatif" selected>Nominatif</option>
     </select>
   </div>
   <div class="field">
@@ -106,6 +107,7 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
   const PAD = 16;
 
   let rows = [];
+  $("mode").value="nominatif";
 
   function val(v){
     if(v == null) return "";
@@ -261,38 +263,37 @@ svg#lines{position:absolute;left:0;top:0;z-index:1;overflow:visible;pointer-even
     return Math.max(leafCursor,1);
   }
 
-  function postStatusClass(status){
+  function statusClass(status){
     const s=val(status).trim().toLowerCase();
     if(!s || s==="permanent") return "";
-    if(s.includes("renfort")) return "renfort";
-    if(s.includes("contrat de projet") || s.includes("projet")) return "contrat";
-    if(s.includes("apprenti")) return "apprenti";
-    return "temporaire";
+    if(s.includes("renfort")) return "status-renfort";
+    if(s.includes("contrat de projet") || s.includes("projet")) return "status-projet";
+    if(s.includes("apprenti")) return "status-apprenti";
+    return "status-temporaire";
   }
 
   function nodeHTML(n){
     const detail=$("detail").value;
     const enc=bool(n.Encadrement,false);
-    const statusClass=postStatusClass(n.Statut);
 
     let h=`<div class="title">${esc(n.Intitule || "(poste sans intitulé)")}</div>`;
 
     // Plus de distinction fonctionnel / nominatif :
-    // l'occupant dépend uniquement du niveau de détail.
-    if((detail==="standard" || detail==="detaille") && val(n.Occupant).trim()){
+    // l'occupant dépend seulement du niveau de détail.
+    if(detail!=="epure" && val(n.Occupant).trim()){
       h+=`<div class="person">${esc(n.Occupant)}</div>`;
     }
 
-    // Les futurs détails Agents (grade, RIFSEEP, statut personne)
-    // seront ajoutés seulement quand la table Agents sera reliée.
+    // On n'affiche plus catégorie, quotité, service, ID poste ni niveau.
+    // Les futurs champs (grade, RIFSEEP, statut de la personne) seront branchés
+    // quand la table Agents sera reliée.
 
-    // Le statut du POSTE reste visible et colore la carte quel que soit le détail.
     const statut=val(n.Statut).trim();
     if(statut && statut.toLowerCase()!=="permanent"){
-      h+=`<span class="post-status">${esc(statut)}</span>`;
+      h+=`<span class="status-badge">${esc(statut)}</span>`;
     }
 
-    return {html:h,enc,statusClass};
+    return {html:h,enc,statusClass:statusClass(n.Statut)};
   }
 
   function render(){
